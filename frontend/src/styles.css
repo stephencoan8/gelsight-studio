@@ -249,6 +249,17 @@ label.field input, label.field select { color: var(--text); }
 }
 .meas.active { border-color: var(--accent); }
 .meas .kind { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.meas-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.meas-tile {
+  text-align: left; border: 1px solid var(--line); background: var(--bg-inset);
+  border-radius: 8px; padding: 8px 10px; color: var(--text);
+}
+.meas-tile.on { border-color: var(--line-strong); background: var(--bg-elev-2); }
+.meas-tile .top { display: flex; align-items: center; gap: 8px; }
+.meas-tile .swatch { width: 8px; height: 8px; border-radius: 99px; flex: none; }
+.meas-tile b { font-weight: 600; font-size: 13px; }
+.meas-tile .kind { color: var(--faint); font-size: 11px; margin-left: auto; }
+.meas-tile .val { font-family: var(--mono); font-size: 12px; margin-top: 4px; }
 .nums { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
 .nums div { font-family: var(--mono); font-size: 12px; }
 .nums span { display: block; color: var(--faint); font-family: var(--sans); font-size: 10px; }

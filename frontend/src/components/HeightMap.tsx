@@ -1,6 +1,17 @@
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { colorize, type Cmap } from "../colormap";
+import { dragItem, hitTest, type EditItem, type Hit } from "../num/mapedit";
 import type { Cursor, Field, Measurement, Tool } from "../types";
+
+export type MapEdit = {
+  items: EditItem[];
+  selected: string | null;
+  mode: "offset" | "scratch";
+  onSelect: (id: string | null) => void;
+  onChange: (item: EditItem) => void;
+  onLinePoint: (x: number, y: number) => void;
+  onRect: (x0: number, y0: number, x1: number, y1: number) => void;
+};
 
 type Cam = { cx: number; cy: number; ppm: number };
 
@@ -18,6 +29,7 @@ export function HeightMap({
   onRect,
   pixelPerfect,
   backdrop,
+  edit,
 }: {
   field: Field;
   cmap: Cmap;
@@ -34,13 +46,15 @@ export function HeightMap({
   pixelPerfect?: boolean;
   /** Full-grid photograph. Null shows the height colours. */
   backdrop?: ImageData | null;
+  edit?: MapEdit;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLCanvasElement>(null);
   const ovl = useRef<HTMLCanvasElement>(null);
   const off = useRef<HTMLCanvasElement | null>(null);
   const cam = useRef<Cam>({ cx: 0, cy: 0, ppm: 1 });
-  const drag = useRef<{ x: number; y: number; cx: number; cy: number; mode: "pan" | "rect"; x0: number; y0: number } | null>(null);
+  const drag = useRef<{ x: number; y: number; cx: number; cy: number; mode: "pan" | "rect"; x0: number; y0: number; x1?: number; y1?: number } | null>(null);
+  const editDrag = useRef<{ hit: Hit; start: EditItem; x: number; y: number } | null>(null);
 
   const fovW = field.fullW * field.fullMmpp;
   const fovH = field.fullH * field.fullMmpp;
@@ -93,6 +107,15 @@ export function HeightMap({
     o.lineWidth = 1.5;
     o.font = "11px IBM Plex Sans, sans-serif";
     measurements.forEach((m, i) => drawMeas(o, m, toX, toY, m.id === selected, i + 1, fovW, fovH));
+    if (edit) edit.items.forEach((item) => drawEdit(o, item, item.id === edit.selected, toX, toY));
+    const live = drag.current;
+    if (live?.mode === "rect" && live.x1 != null && live.y1 != null) {
+      o.save();
+      o.strokeStyle = "#c4b15a";
+      o.setLineDash([4, 3]);
+      o.strokeRect(Math.min(toX(live.x0), toX(live.x1)), Math.min(toY(live.y0), toY(live.y1)), Math.abs(toX(live.x1) - toX(live.x0)), Math.abs(toY(live.y1) - toY(live.y0)));
+      o.restore();
+    }
     if (draft.length) {
       o.strokeStyle = "#4aa3ff";
       o.fillStyle = "#4aa3ff";
@@ -141,7 +164,7 @@ export function HeightMap({
     paint();
     // overlay depends on annotations; paint reads the latest camera from the ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [measurements, selected, draft, cursor]);
+  }, [measurements, selected, draft, cursor, edit]);
 
   useEffect(() => {
     const el = wrap.current;
@@ -182,20 +205,45 @@ export function HeightMap({
     <div
       ref={wrap}
       className="stage"
-      style={{ cursor: tool === "navigate" ? "grab" : "crosshair" }}
+      style={{ cursor: edit || tool !== "navigate" ? "crosshair" : "grab" }}
       onPointerDown={(e) => {
         const p = eventMm(e);
+        if (edit && e.button === 0) {
+          const hit = hitTest(p.x, p.y, edit.items, edit.selected, 8 / cam.current.ppm);
+          if (hit) {
+            const item = edit.items.find((entry) => entry.id === hit.item);
+            if (item) {
+              edit.onSelect(hit.item);
+              editDrag.current = { hit, start: structuredClone(item), x: p.x, y: p.y };
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              return;
+            }
+          }
+          if (edit.mode === "scratch") {
+            drag.current = { x: e.clientX, y: e.clientY, cx: cam.current.cx, cy: cam.current.cy, mode: "rect", x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            return;
+          }
+          edit.onSelect(null);
+          edit.onLinePoint(p.x, p.y);
+          return;
+        }
         if (tool === "navigate" || e.button === 1 || e.button === 2) {
           drag.current = { x: e.clientX, y: e.clientY, cx: cam.current.cx, cy: cam.current.cy, mode: "pan", x0: p.x, y0: p.y };
-          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         } else if (tool === "roughness" || tool === "area") {
-          drag.current = { x: e.clientX, y: e.clientY, cx: cam.current.cx, cy: cam.current.cy, mode: "rect", x0: p.x, y0: p.y };
-          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          drag.current = { x: e.clientX, y: e.clientY, cx: cam.current.cx, cy: cam.current.cy, mode: "rect", x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         }
       }}
       onPointerMove={(e) => {
         const p = eventMm(e);
         onCursor({ x: p.x, y: p.y, z: zAt(p.x, p.y) });
+        const editing = editDrag.current;
+        if (editing && edit) {
+          edit.onChange(dragItem(editing.start, editing.hit, p.x, p.y, editing.x, editing.y));
+          return;
+        }
         const d = drag.current;
         if (!d) return;
         if (d.mode === "pan") {
@@ -203,18 +251,25 @@ export function HeightMap({
           cam.current.cx = d.cx - (e.clientX - d.x) / ppm;
           cam.current.cy = d.cy - (e.clientY - d.y) / ppm;
           paint();
+        } else if (d.mode === "rect") {
+          d.x1 = p.x;
+          d.y1 = p.y;
+          paint();
         }
       }}
       onPointerUp={(e) => {
+        editDrag.current = null;
         const d = drag.current;
         drag.current = null;
         if (d?.mode === "rect") {
           const p = eventMm(e);
-          onRect(d.x0, d.y0, p.x, p.y);
+          if (edit) edit.onRect(d.x0, d.y0, p.x, p.y);
+          else onRect(d.x0, d.y0, p.x, p.y);
+          paint();
         }
       }}
       onClick={(e) => {
-        if (tool === "navigate" || tool === "roughness" || tool === "area") return;
+        if (edit || tool === "navigate" || tool === "roughness" || tool === "area") return;
         const p = eventMm(e);
         onClick(p.x, p.y, e.shiftKey);
       }}
@@ -238,6 +293,58 @@ export function HeightMap({
       <canvas ref={ovl} style={{ pointerEvents: "none" }} />
     </div>
   );
+}
+
+function drawEdit(
+  o: CanvasRenderingContext2D,
+  item: EditItem,
+  active: boolean,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+) {
+  o.save();
+  o.strokeStyle = item.color;
+  o.fillStyle = item.color;
+  o.lineWidth = active ? 2.4 : 1.4;
+  o.font = "12px IBM Plex Sans, sans-serif";
+  if (item.line) {
+    o.beginPath();
+    o.moveTo(X(item.line[0].x), Y(item.line[0].y));
+    o.lineTo(X(item.line[1].x), Y(item.line[1].y));
+    o.stroke();
+    if (active) {
+      for (const p of item.line) {
+        o.beginPath();
+        o.arc(X(p.x), Y(p.y), 5, 0, Math.PI * 2);
+        o.fill();
+      }
+    }
+    for (const seg of item.segments ?? []) {
+      o.strokeStyle = seg.color;
+      o.lineWidth = 6;
+      o.globalAlpha = 0.9;
+      o.beginPath();
+      o.moveTo(X(seg.a.x), Y(seg.a.y));
+      o.lineTo(X(seg.b.x), Y(seg.b.y));
+      o.stroke();
+      o.globalAlpha = 1;
+    }
+  }
+  for (const rect of item.rects) {
+    const x0 = Math.min(rect.rect[0], rect.rect[2]);
+    const y0 = Math.min(rect.rect[1], rect.rect[3]);
+    const x1 = Math.max(rect.rect[0], rect.rect[2]);
+    const y1 = Math.max(rect.rect[1], rect.rect[3]);
+    o.globalAlpha = 0.28;
+    o.fillRect(X(x0), Y(y0), X(x1) - X(x0), Y(y1) - Y(y0));
+    o.globalAlpha = 1;
+    o.strokeRect(X(x0), Y(y0), X(x1) - X(x0), Y(y1) - Y(y0));
+    if (rect.label) o.fillText(rect.label, X(x0) + 5, Y(y0) + 14);
+    if (active) {
+      for (const [cx, cy] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as const) o.fillRect(X(cx) - 3, Y(cy) - 3, 6, 6);
+    }
+  }
+  o.restore();
 }
 
 function drawMeas(

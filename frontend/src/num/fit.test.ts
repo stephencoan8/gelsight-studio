@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitAnnulus, fitLevels, fitProfile } from "./fit";
+import { fitAnnulus, fitLevels, fitOffsetProfile, fitProfile } from "./fit";
 
 describe("shared surface fit", () => {
   it("reads a known offset from a profile once the reference zones are removed", () => {
@@ -24,6 +24,18 @@ describe("shared surface fit", () => {
     expect(got.offset).toBeCloseTo(25, 1);
     const shifted = fitLevels(distance, height, [0, 2], [2.2, 3.5], 1);
     expect(shifted.offset).toBeCloseTo(0, 1);
+  });
+
+  it("levels on the green zones and subtracts blue from red", () => {
+    const distance = Array.from({ length: 81 }, (_, i) => i * 0.1);
+    const height = distance.map((x) => 2 + 0.4 * x + (x >= 3 && x <= 4 ? 12 : 0) + (x >= 6 && x <= 7 ? -5 : 0));
+    const got = fitOffsetProfile(distance, height, [[0, 2]], [3, 4], [6, 7], 1);
+    expect(got.red.mean).toBeCloseTo(12, 0);
+    expect(got.blue.mean).toBeCloseTo(-5, 0);
+    expect(got.offset).toBeCloseTo(17, 0);
+    const both = fitOffsetProfile(distance, height, [[0, 2], [7.2, 8]], [3, 4], [4.2, 5.2], 1);
+    expect(both.red.mean).toBeCloseTo(12, 0);
+    expect(Math.abs(both.blue.mean)).toBeLessThan(0.5);
   });
 
   it("reads a known scratch depth from the frame between two boxes", () => {
