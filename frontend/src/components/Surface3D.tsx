@@ -12,6 +12,9 @@ export function Surface3D({
   hi,
   onPick,
   onCursor,
+  showAxis = true,
+  showGrid = true,
+  showColor = true,
 }: {
   field: Field;
   cmap: Cmap;
@@ -20,10 +23,13 @@ export function Surface3D({
   hi: number;
   onPick?: (x: number, y: number) => void;
   onCursor?: (x: number, y: number, z: number) => void;
+  showAxis?: boolean;
+  showGrid?: boolean;
+  showColor?: boolean;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const props = useRef({ field, cmap, exag, lo, hi, onPick, onCursor });
-  props.current = { field, cmap, exag, lo, hi, onPick, onCursor };
+  const props = useRef({ field, cmap, exag, lo, hi, onPick, onCursor, showAxis, showGrid, showColor });
+  props.current = { field, cmap, exag, lo, hi, onPick, onCursor, showAxis, showGrid, showColor };
 
   useEffect(() => {
     const el = wrap.current;
@@ -46,6 +52,8 @@ export function Surface3D({
     fill.position.set(-1, 0.4, -0.4);
     scene.add(fill);
     let mesh: THREE.Mesh | null = null;
+    let axis: THREE.AxesHelper | null = null;
+    let grid: THREE.GridHelper | null = null;
     const ray = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
@@ -55,6 +63,8 @@ export function Surface3D({
         mesh.geometry.dispose();
         (mesh.material as THREE.Material).dispose();
       }
+      if (axis) scene.remove(axis);
+      if (grid) scene.remove(grid);
       const f = props.current.field;
       const stride = Math.max(1, Math.ceil(Math.max(f.w, f.h) / 380));
       const cols = Math.ceil(f.w / stride);
@@ -83,10 +93,21 @@ export function Surface3D({
       pos.needsUpdate = true;
       geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
       geo.computeVertexNormals();
-      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.04, side: THREE.DoubleSide });
+      const mat = props.current.showColor
+        ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.04, side: THREE.DoubleSide })
+        : new THREE.MeshStandardMaterial({ color: 0x8d97a5, roughness: 0.72, metalness: 0.02, side: THREE.DoubleSide });
       mesh = new THREE.Mesh(geo, mat);
       mesh.rotation.x = -Math.PI / 2;
       scene.add(mesh);
+      const fovNow = Math.max(f.fullW, f.fullH) * f.fullMmpp;
+      if (props.current.showAxis) {
+        axis = new THREE.AxesHelper(fovNow * 0.45);
+        scene.add(axis);
+      }
+      if (props.current.showGrid) {
+        grid = new THREE.GridHelper(fovNow, 8, 0x556070, 0x2c3542);
+        scene.add(grid);
+      }
       const fov = Math.max(f.fullW, f.fullH) * f.fullMmpp;
       camera.position.set(fov * 0.15, Math.max(fov * 0.7, 1), fov * 0.9);
       controls.target.set(0, 0, 0);
@@ -149,7 +170,7 @@ export function Surface3D({
       host.removeChild(renderer.domElement);
     };
     // Rebuild when the height field, colour, or exaggeration changes.
-  }, [field, cmap, exag, lo, hi]);
+  }, [field, cmap, exag, lo, hi, showAxis, showGrid, showColor]);
 
   return <div ref={wrap} className="stage" />;
 }

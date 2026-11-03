@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { settings } from "./api";
+import { displaySettings, settings, type DisplaySettings } from "./api";
+import { heightFromUm, unitLabel, fromMm } from "./num/workflow";
 import type { Cursor } from "./types";
 import { CalibrationView } from "./views/Calibration";
 import { Compare } from "./views/Compare";
@@ -8,6 +9,7 @@ import { Library } from "./views/Library";
 import { Recipes } from "./views/Recipes";
 import { Validation } from "./views/Validation";
 import { Surface } from "./views/Surface";
+import { SettingsDialog } from "./views/SettingsDialog";
 import { Viewer } from "./views/Viewer";
 
 type Page = "library" | "viewer" | "tools" | "calibrate" | "recipes" | "compare" | "validation" | "help";
@@ -27,6 +29,8 @@ export function App() {
   const [more, setMore] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [plate, setPlate] = useState<string>("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [display, setDisplay] = useState<DisplaySettings | null>(null);
 
   const go = useCallback((p: Page, id?: string | null) => {
     const scanId = id === undefined ? scan : id;
@@ -42,7 +46,13 @@ export function App() {
   useEffect(() => {
     const onHash = () => setRoute(readRoute());
     window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    const loadDisplay = () => displaySettings().then(setDisplay).catch(() => undefined);
+    loadDisplay();
+    window.addEventListener("display-settings", loadDisplay);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("display-settings", loadDisplay);
+    };
   }, []);
 
   const refreshPlate = useCallback(() => {
@@ -127,6 +137,9 @@ export function App() {
                 <div>{plate || "None"}</div>
               </details>
             )}
+            <button className="item" onClick={() => setSettingsOpen(true)}>
+              <span>Settings</span>
+            </button>
             <button className="item" onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}>
               <span>{theme === "dark" ? "Light theme" : "Dark theme"}</span>
             </button>
@@ -144,10 +157,15 @@ export function App() {
         {page === "help" && <Help />}
       </main>
       <footer className="status">
-        <span><b>X</b> {cursor ? cursor.x.toFixed(3) : "—"} mm</span>
-        <span><b>Y</b> {cursor ? cursor.y.toFixed(3) : "—"} mm</span>
-        <span><b>Z</b> {cursor?.z != null ? cursor.z.toFixed(2) : "—"} µm</span>
+        <span><b>X</b> {cursor ? fromMm(cursor.x, display?.xyUnit || "mm").toFixed(3) : "—"} {unitLabel(display?.xyUnit || "mm")}</span>
+        <span><b>Y</b> {cursor ? fromMm(cursor.y, display?.xyUnit || "mm").toFixed(3) : "—"} {unitLabel(display?.xyUnit || "mm")}</span>
+        <span><b>Z</b> {cursor?.z != null ? heightFromUm(cursor.z, display?.zUnit || "um").toFixed(3) : "—"} {unitLabel(display?.zUnit || "um")}</span>
       </footer>
+      {settingsOpen && (
+        <div className="modal-back" onClick={() => setSettingsOpen(false)}>
+          <SettingsDialog onClose={() => setSettingsOpen(false)} />
+        </div>
+      )}
       {help && page !== "help" && (
         <div className="modal-back" onClick={() => setHelp(false)}>
           <div className="modal" style={{ width: "min(760px, calc(100% - 32px))", maxHeight: "80vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>

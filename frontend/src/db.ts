@@ -53,6 +53,7 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
 const heightMem = new Map<string, Float32Array>();
 const rawMem = new Map<string, RawFrames>();
 const scanMem = new Map<string, ScanRecord>();
+const measMem = new Map<string, Measurement>();
 const HEIGHT_MEM_LIMIT = 3;
 const RAW_MEM_LIMIT = 2;
 /** Persisted height and photo blobs kept for the newest scans. Older blobs are dropped so a full origin cannot block the next import. */
@@ -346,14 +347,30 @@ export async function removeScan(id: string) {
   await deleteBlobs(id);
 }
 
-export async function putMeasurement(m: Measurement) {
-  const db = await openDb();
-  await request(db.transaction("measurements", "readwrite").objectStore("measurements").put(m));
+export async function putMeasurement(m: Measurement): Promise<boolean> {
+  measMem.set(m.id, m);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const db = await openDb();
+      await request(db.transaction("measurements", "readwrite").objectStore("measurements").put(m));
+      return true;
+    } catch (error) {
+      if (!isQuotaError(error) || !(await evictOne(m.scan_id))) return false;
+    }
+  }
+  return false;
 }
 
 export async function measurementsOf(scanId: string): Promise<Measurement[]> {
-  const db = await openDb();
-  const rows = (await request(db.transaction("measurements").objectStore("measurements").getAll())) as Measurement[];
+  let rows: Measurement[] = [];
+  try {
+    const db = await openDb();
+    rows = (await request(db.transaction("measurements").objectStore("measurements").getAll())) as Measurement[];
+  } catch {
+    rows = [];
+  }
+  const seen = new Set(rows.map((row) => row.id));
+  for (const row of measMem.values()) if (row.scan_id === scanId && !seen.has(row.id)) rows.push(row);
   return rows.filter((m) => m.scan_id === scanId).sort((a, b) => (a.created < b.created ? -1 : 1));
 }
 
@@ -363,8 +380,13 @@ export async function getMeasurement(id: string): Promise<Measurement | null> {
 }
 
 export async function removeMeasurement(id: string) {
-  const db = await openDb();
-  await request(db.transaction("measurements", "readwrite").objectStore("measurements").delete(id));
+  measMem.delete(id);
+  try {
+    const db = await openDb();
+    await request(db.transaction("measurements", "readwrite").objectStore("measurements").delete(id));
+  } catch {
+    /* the session copy is already gone */
+  }
 }
 
 export async function putCalibration(cal: Calibration) {

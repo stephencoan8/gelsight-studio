@@ -30,6 +30,10 @@ export function HeightMap({
   pixelPerfect,
   backdrop,
   edit,
+  guides,
+  banner,
+  zoom = 1,
+  onContext,
 }: {
   field: Field;
   cmap: Cmap;
@@ -47,6 +51,10 @@ export function HeightMap({
   /** Full-grid photograph. Null shows the height colours. */
   backdrop?: ImageData | null;
   edit?: MapEdit;
+  guides?: { scale: boolean; cross: boolean; grid: boolean };
+  banner?: string;
+  zoom?: number;
+  onContext?: (x: number, y: number) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLCanvasElement>(null);
@@ -55,6 +63,8 @@ export function HeightMap({
   const cam = useRef<Cam>({ cx: 0, cy: 0, ppm: 1 });
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; mode: "pan" | "rect"; x0: number; y0: number; x1?: number; y1?: number } | null>(null);
   const editDrag = useRef<{ hit: Hit; start: EditItem; x: number; y: number } | null>(null);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   const fovW = field.fullW * field.fullMmpp;
   const fovH = field.fullH * field.fullMmpp;
@@ -62,7 +72,7 @@ export function HeightMap({
   function fit() {
     const el = wrap.current;
     if (!el) return;
-    const ppm = Math.min(el.clientWidth / fovW, el.clientHeight / fovH) * 0.92;
+    const ppm = Math.min(el.clientWidth / fovW, el.clientHeight / fovH) * 0.92 * zoomRef.current;
     cam.current = { cx: fovW / 2, cy: fovH / 2, ppm };
     paint();
   }
@@ -128,16 +138,55 @@ export function HeightMap({
         o.fill();
       });
     }
-    if (cursor) {
+    if (cursor && guides?.cross) {
       o.strokeStyle = "rgba(255,255,255,0.85)";
       o.beginPath();
       const x = toX(cursor.x);
       const y = toY(cursor.y);
-      o.moveTo(x - 8, y);
-      o.lineTo(x + 8, y);
-      o.moveTo(x, y - 8);
-      o.lineTo(x, y + 8);
+      o.moveTo(x - 10, y);
+      o.lineTo(x + 10, y);
+      o.moveTo(x, y - 10);
+      o.lineTo(x, y + 10);
       o.stroke();
+    }
+    if (guides?.grid || guides?.scale) {
+      const span = 140 / ppm;
+      const pow = 10 ** Math.floor(Math.log10(Math.max(span, 1e-6)));
+      const nice = (span / pow >= 5 ? 5 : span / pow >= 2 ? 2 : 1) * pow;
+      o.save();
+      o.strokeStyle = "rgba(255,255,255,0.28)";
+      o.fillStyle = "rgba(255,255,255,0.85)";
+      o.font = "11px IBM Plex Sans, sans-serif";
+      if (guides.grid) {
+        for (let x = 0; x <= fovW + 1e-6; x += nice) {
+          o.beginPath();
+          o.moveTo(toX(x), toY(0));
+          o.lineTo(toX(x), toY(fovH));
+          o.stroke();
+        }
+        for (let y = 0; y <= fovH + 1e-6; y += nice) {
+          o.beginPath();
+          o.moveTo(toX(0), toY(y));
+          o.lineTo(toX(fovW), toY(y));
+          o.stroke();
+        }
+      }
+      if (guides.scale) {
+        const x0 = 16;
+        const y0 = h - 28;
+        o.strokeStyle = "#fff";
+        o.lineWidth = 2;
+        o.beginPath();
+        o.moveTo(x0, y0);
+        o.lineTo(x0 + nice * ppm, y0);
+        o.moveTo(x0, y0 - 4);
+        o.lineTo(x0, y0 + 4);
+        o.moveTo(x0 + nice * ppm, y0 - 4);
+        o.lineTo(x0 + nice * ppm, y0 + 4);
+        o.stroke();
+        o.fillText(`${nice >= 1 ? nice.toFixed(0) : nice.toPrecision(2)} mm`, x0, y0 - 6);
+      }
+      o.restore();
     }
   }
 
@@ -164,7 +213,14 @@ export function HeightMap({
     paint();
     // overlay depends on annotations; paint reads the latest camera from the ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [measurements, selected, draft, cursor, edit]);
+  }, [measurements, selected, draft, cursor, edit, guides, zoom]);
+
+  useEffect(() => {
+    if (!wrap.current) return;
+    if (pixelPerfect) oneToOne();
+    else fit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom]);
 
   useEffect(() => {
     const el = wrap.current;
@@ -286,11 +342,16 @@ export function HeightMap({
         cam.current.cy = my - (e.clientY - r.top - r.height / 2) / cam.current.ppm;
         paint();
       }}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        const p = eventMm(e);
+        onContext?.(p.x, p.y);
+      }}
       onDoubleClick={fit}
     >
       <canvas ref={img} />
       <canvas ref={ovl} style={{ pointerEvents: "none" }} />
+      {banner && <div className="scan-status">{banner}</div>}
     </div>
   );
 }
@@ -329,6 +390,35 @@ function drawEdit(
       o.stroke();
       o.globalAlpha = 1;
     }
+  }
+  for (const poly of item.polys ?? []) {
+    o.strokeStyle = poly.color;
+    o.fillStyle = poly.color;
+    o.beginPath();
+    poly.pts.forEach((p, i) => (i ? o.lineTo(X(p.x), Y(p.y)) : o.moveTo(X(p.x), Y(p.y))));
+    o.closePath();
+    o.globalAlpha = 0.22;
+    o.fill();
+    o.globalAlpha = 1;
+    o.stroke();
+    if (poly.label && poly.pts[0]) o.fillText(poly.label, X(poly.pts[0].x) + 6, Y(poly.pts[0].y) + 14);
+    if (active) {
+      o.fillStyle = "#fff";
+      for (const p of poly.pts) {
+        o.beginPath();
+        o.arc(X(p.x), Y(p.y), 5, 0, Math.PI * 2);
+        o.fill();
+        o.stroke();
+      }
+    }
+  }
+  for (const dot of item.dots ?? []) {
+    o.fillStyle = dot.color;
+    o.strokeStyle = "#fff";
+    o.beginPath();
+    o.arc(X(dot.x), Y(dot.y), 7, 0, Math.PI * 2);
+    o.fill();
+    o.stroke();
   }
   for (const rect of item.rects) {
     const x0 = Math.min(rect.rect[0], rect.rect[2]);

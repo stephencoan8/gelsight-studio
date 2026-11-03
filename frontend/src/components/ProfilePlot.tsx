@@ -26,6 +26,8 @@ export function ProfilePlot({
   zones,
   bands,
   fit,
+  markers,
+  yTitle = "Height (µm)",
   onPick,
   onBand,
 }: {
@@ -34,6 +36,8 @@ export function ProfilePlot({
   zones?: Span[];
   bands?: { id: string; span: Span; label: string; color: string; fill: string }[];
   fit?: (number | null)[];
+  markers?: { x: number; color: string }[];
+  yTitle?: string;
   onPick?: (x: number) => void;
   onBand?: (id: string, span: Span) => void;
 }) {
@@ -52,11 +56,11 @@ export function ProfilePlot({
   y0 -= pad;
   y1 += pad;
   const W = 1000;
-  const H = 210;
-  const L = 52;
-  const R = 12;
-  const T = 16;
-  const B = 28;
+  const H = 228;
+  const L = 58;
+  const R = 16;
+  const T = 18;
+  const B = 42;
   const px = (x: number) => L + ((x - x0) / (x1 - x0 || 1)) * (W - L - R);
   const py = (y: number) => T + ((y1 - y) / (y1 - y0)) * (H - T - B);
   let d = "";
@@ -64,7 +68,8 @@ export function ProfilePlot({
     if (!Number.isFinite(y)) return;
     d += `${d ? "L" : "M"}${px(series.x[i]).toFixed(1)},${py(y).toFixed(1)}`;
   });
-  const ticks = [0, 0.5, 1].map((f) => y0 + f * (y1 - y0));
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => y0 + f * (y1 - y0));
+  const xticks = [0, 0.25, 0.5, 0.75, 1].map((f) => x0 + f * (x1 - x0));
   const fitPath = fit
     ? fit.map((y, i) => (typeof y === "number" && Number.isFinite(y) ? `${i ? "L" : "M"}${px(series.x[i]).toFixed(1)},${py(y).toFixed(1)}` : "")).join("")
     : "";
@@ -134,14 +139,21 @@ export function ProfilePlot({
         if (x >= x0 && x <= x1) onPick(x);
       } : undefined}
     >
-      <text x={L} y={12} fill="var(--muted)" fontSize="11">
-        {series.title}
-      </text>
+      <text x={L} y={12} fill="var(--muted)" fontSize="11">{yTitle}</text>
+      <text x={W - 210} y={12} fill="var(--muted)" fontSize="11">{series.title}</text>
       {ticks.map((t) => (
-        <g key={t}>
+        <g key={`y-${t}`}>
           <line x1={L} x2={W - R} y1={py(t)} y2={py(t)} stroke="var(--line)" />
           <text x={4} y={py(t) + 3} fill="var(--faint)" fontSize="10" fontFamily="IBM Plex Mono, monospace">
             {t.toFixed(1)}
+          </text>
+        </g>
+      ))}
+      {xticks.map((t) => (
+        <g key={`x-${t}`}>
+          <line x1={px(t)} x2={px(t)} y1={T} y2={H - B} stroke="var(--line)" strokeOpacity="0.55" />
+          <text x={px(t)} y={H - 20} textAnchor="middle" fill="var(--faint)" fontSize="10" fontFamily="IBM Plex Mono, monospace">
+            {t.toFixed(2)}
           </text>
         </g>
       ))}
@@ -155,22 +167,33 @@ export function ProfilePlot({
           <g key={band.id}>
             <rect x={px(lo)} y={T} width={Math.max(px(hi) - px(lo), 1)} height={H - T - B} fill={band.fill} stroke={band.color} strokeWidth="1.5" />
             <text x={px(lo) + 6} y={T + 16} fill={band.color} fontSize="13" fontWeight="650">{band.label}</text>
-            <rect x={px(lo) - 4} y={T} width="8" height={H - T - B} fill={band.color} style={{ cursor: "ew-resize" }} onPointerDown={(e) => begin(e, band.id, "start", lo, hi)} />
-            <rect x={px(hi) - 4} y={T} width="8" height={H - T - B} fill={band.color} style={{ cursor: "ew-resize" }} onPointerDown={(e) => begin(e, band.id, "end", lo, hi)} />
+            <rect x={px(lo) - 8} y={T} width="16" height={H - T - B} fill="transparent" style={{ cursor: "ew-resize" }} onPointerDown={(e) => begin(e, band.id, "start", lo, hi)} />
+            <rect x={px(hi) - 8} y={T} width="16" height={H - T - B} fill="transparent" style={{ cursor: "ew-resize" }} onPointerDown={(e) => begin(e, band.id, "end", lo, hi)} />
+            <circle cx={px(lo)} cy={(T + H - B) / 2} r="6" fill="#fff" stroke="#1c2430" strokeWidth="1.4" />
+            <circle cx={px(hi)} cy={(T + H - B) / 2} r="6" fill="#fff" stroke="#1c2430" strokeWidth="1.4" />
             <rect x={px(lo) + 8} y={T} width={Math.max(px(hi) - px(lo) - 16, 0)} height={H - T - B} fill="transparent" style={{ cursor: "grab" }} onPointerDown={(e) => begin(e, band.id, "move", lo, hi)} />
           </g>
         );
       })}
-      <path d={d} fill="none" stroke="#4aa3ff" strokeWidth="1.6" />
+      <path d={d} fill="none" stroke="#d7dde6" strokeWidth="1.6" />
+      {(markers || []).map((marker, i) => {
+        let nearest = 0;
+        let best = Infinity;
+        series.x.forEach((x, k) => {
+          const gap = Math.abs(x - marker.x);
+          if (gap < best && Number.isFinite(ys[k])) {
+            best = gap;
+            nearest = k;
+          }
+        });
+        return <circle key={i} cx={px(series.x[nearest])} cy={py(ys[nearest])} r="4.5" fill={marker.color} stroke="#fff" strokeWidth="1" />;
+      })}
       {fitPath && <path d={fitPath} fill="none" stroke="#e2a84b" strokeWidth="1.4" />}
       {cursorX != null && cursorX >= x0 && cursorX <= x1 && (
         <line x1={px(cursorX)} x2={px(cursorX)} y1={T} y2={H - B} stroke="var(--warn)" strokeDasharray="3 3" />
       )}
-      <text x={L} y={H - 8} fill="var(--faint)" fontSize="11">
+      <text x={(L + W - R) / 2} y={H - 8} textAnchor="middle" fill="var(--faint)" fontSize="11">
         {series.xlabel}
-      </text>
-      <text x={4} y={H - 8} fill="var(--faint)" fontSize="11">
-        µm
       </text>
     </svg>
   );

@@ -4,11 +4,14 @@ export type Pt = { x: number; y: number };
 export type Rect = [number, number, number, number];
 
 export type EditRect = { id: string; rect: Rect; label?: string };
+export type EditPoly = { id: string; pts: Pt[]; color: string; label?: string };
 export type EditItem = {
   id: string;
   color: string;
   line?: [Pt, Pt];
   rects: EditRect[];
+  polys?: EditPoly[];
+  dots?: { x: number; y: number; color: string }[];
   /** Coloured spans drawn on the line. They are not hit targets. */
   segments?: { a: Pt; b: Pt; color: string }[];
 };
@@ -16,7 +19,8 @@ export type EditItem = {
 export type Edge = "move" | "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 export type Hit =
   | { item: string; kind: "p0" | "p1" | "line" }
-  | { item: string; kind: "rect"; rect: string; edge: Edge };
+  | { item: string; kind: "rect"; rect: string; edge: Edge }
+  | { item: string; kind: "vertex"; poly: string; index: number };
 
 export function zonesBeside(a: Pt, b: Pt): [Rect, Rect] {
   const minX = Math.min(a.x, b.x);
@@ -40,6 +44,13 @@ export function hitTest(x: number, y: number, items: EditItem[], selected: strin
       if (near(x, y, item.line[0], tol)) return { item: item.id, kind: "p0" };
       if (near(x, y, item.line[1], tol)) return { item: item.id, kind: "p1" };
     }
+    if (item.id === selected) {
+      for (const poly of item.polys ?? []) {
+        for (let index = 0; index < poly.pts.length; index++) {
+          if (near(x, y, poly.pts[index], tol)) return { item: item.id, kind: "vertex", poly: poly.id, index };
+        }
+      }
+    }
     for (const rect of item.rects) {
       const edge = rectEdge(x, y, rect.rect, item.id === selected ? tol : tol * 0.4);
       if (edge) return { item: item.id, kind: "rect", rect: rect.id, edge };
@@ -54,6 +65,14 @@ export function dragItem(start: EditItem, hit: Hit, x: number, y: number, x0: nu
   const dy = y - y0;
   if (hit.kind === "p0" && start.line) return { ...start, line: [{ x: start.line[0].x + dx, y: start.line[0].y + dy }, start.line[1]] };
   if (hit.kind === "p1" && start.line) return { ...start, line: [start.line[0], { x: start.line[1].x + dx, y: start.line[1].y + dy }] };
+  if (hit.kind === "vertex") {
+    return {
+      ...start,
+      polys: (start.polys ?? []).map((poly) => poly.id === hit.poly
+        ? { ...poly, pts: poly.pts.map((pt, index) => (index === hit.index ? { x: pt.x + dx, y: pt.y + dy } : pt)) }
+        : poly),
+    };
+  }
   if (hit.kind !== "rect") return start;
   return {
     ...start,

@@ -399,6 +399,145 @@ function altitude(distance: number[], leveled: number[], zone: [number, number])
   return { min, max, mean: sum / n, n };
 }
 
+export interface PolygonFit {
+  order: number;
+  min: number;
+  max: number;
+  mean: number;
+  /** Pixel of the minimum residual inside the inner polygon. */
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  nReference: number;
+  nFeature: number;
+}
+
+/** Fourth-order reference between two polygons. `tolerance` drops reference pixels farther than that from a first fit. */
+export function fitPolygons(
+  z: ArrayLike<number>,
+  cols: number,
+  rows: number,
+  inner: { x: number; y: number }[],
+  outer: { x: number; y: number }[],
+  tolerance = 0,
+): PolygonFit {
+  const order = 4;
+  const terms = powers(order);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of outer) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  const ox0 = clamp(Math.floor(minX), 0, cols);
+  const oy0 = clamp(Math.floor(minY), 0, rows);
+  const ox1 = clamp(Math.ceil(maxX), 0, cols);
+  const oy1 = clamp(Math.ceil(maxY), 0, rows);
+  const spanX = Math.max(ox1 - ox0, 1);
+  const spanY = Math.max(oy1 - oy0, 1);
+  const ref: number[] = [];
+  const feat: number[] = [];
+  for (let y = oy0; y < oy1; y++) {
+    for (let x = ox0; x < ox1; x++) {
+      if (!insidePoly(x + 0.5, y + 0.5, outer)) continue;
+      const i = y * cols + x;
+      if (!Number.isFinite(z[i])) continue;
+      (insidePoly(x + 0.5, y + 0.5, inner) ? feat : ref).push(i);
+    }
+  }
+  if (ref.length < terms.length) throw new Error("the outer polygon needs more reference points than the polynomial");
+  if (!feat.length) throw new Error("the inner polygon has no samples");
+  const coef = solvePoly(z, cols, ref, ox0, oy0, spanX, spanY, terms);
+  const kept = tolerance > 0
+    ? ref.filter((i) => Math.abs(z[i] - evalPoly(i, cols, coef, ox0, oy0, spanX, spanY, terms)) <= tolerance)
+    : ref;
+  const used = kept.length >= terms.length ? kept : ref;
+  const final = used === ref ? coef : solvePoly(z, cols, used, ox0, oy0, spanX, spanY, terms);
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  let minAt = feat[0];
+  let maxAt = feat[0];
+  for (const i of feat) {
+    const d = z[i] - evalPoly(i, cols, final, ox0, oy0, spanX, spanY, terms);
+    if (d < min) {
+      min = d;
+      minAt = i;
+    }
+    if (d > max) {
+      max = d;
+      maxAt = i;
+    }
+    sum += d;
+  }
+  return {
+    order,
+    min,
+    max,
+    mean: sum / feat.length,
+    minX: minAt % cols,
+    minY: Math.floor(minAt / cols),
+    maxX: maxAt % cols,
+    maxY: Math.floor(maxAt / cols),
+    nReference: used.length,
+    nFeature: feat.length,
+  };
+}
+
+function solvePoly(
+  z: ArrayLike<number>,
+  cols: number,
+  ref: number[],
+  ox0: number,
+  oy0: number,
+  spanX: number,
+  spanY: number,
+  terms: [number, number][],
+): number[] {
+  const nT = terms.length;
+  const ata = Array.from({ length: nT }, () => new Float64Array(nT));
+  const atb = new Float64Array(nT);
+  for (const i of ref) {
+    const row = polyRow(i, cols, ox0, oy0, spanX, spanY, terms);
+    const val = z[i];
+    for (let j = 0; j < nT; j++) {
+      atb[j] += row[j] * val;
+      for (let k = j; k < nT; k++) ata[j][k] += row[j] * row[k];
+    }
+  }
+  const normal = ata.map((row) => Array.from(row));
+  for (let j = 0; j < nT; j++) {
+    for (let k = 0; k < j; k++) normal[j][k] = normal[k][j];
+    normal[j][j] += 1e-10;
+  }
+  return solveSquare(normal, Array.from(atb));
+}
+
+function polyRow(i: number, cols: number, ox0: number, oy0: number, spanX: number, spanY: number, terms: [number, number][]) {
+  const y = Math.floor(i / cols);
+  const x = i - y * cols;
+  return basis2((2 * (x - ox0)) / spanX - 1, (2 * (y - oy0)) / spanY - 1, terms);
+}
+
+function evalPoly(i: number, cols: number, coef: number[], ox0: number, oy0: number, spanX: number, spanY: number, terms: [number, number][]) {
+  return dot(polyRow(i, cols, ox0, oy0, spanX, spanY, terms), coef);
+}
+
+function insidePoly(x: number, y: number, pts: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const yi = pts[i].y;
+    const yj = pts[j].y;
+    if ((yi > y) !== (yj > y) && x < ((pts[j].x - pts[i].x) * (y - yi)) / (yj - yi || 1e-12) + pts[i].x) inside = !inside;
+  }
+  return inside;
+}
+
 function pixelBox(zone: Rect, mmpp: number, cols: number, rows: number) {
   return {
     x0: clamp(Math.floor(Math.min(zone[0], zone[2]) / mmpp), 0, cols),
