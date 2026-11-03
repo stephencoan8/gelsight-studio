@@ -9,6 +9,8 @@ export type EditItem = {
   color: string;
   line?: [Pt, Pt];
   rects: EditRect[];
+  /** Coloured spans drawn on the line. They are not hit targets. */
+  segments?: { a: Pt; b: Pt; color: string }[];
 };
 
 export type Edge = "move" | "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";

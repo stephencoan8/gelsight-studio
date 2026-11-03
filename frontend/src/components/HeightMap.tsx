@@ -319,6 +319,16 @@ function drawEdit(
         o.fill();
       }
     }
+    for (const seg of item.segments ?? []) {
+      o.strokeStyle = seg.color;
+      o.lineWidth = 6;
+      o.globalAlpha = 0.9;
+      o.beginPath();
+      o.moveTo(X(seg.a.x), Y(seg.a.y));
+      o.lineTo(X(seg.b.x), Y(seg.b.y));
+      o.stroke();
+      o.globalAlpha = 1;
+    }
   }
   for (const rect of item.rects) {
     const x0 = Math.min(rect.rect[0], rect.rect[2]);

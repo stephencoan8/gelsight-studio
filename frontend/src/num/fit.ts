@@ -325,6 +325,80 @@ export function fitLevelRegions(
   return { order, offset: sum / n, min, max, nReference, nFeature: n, fitted };
 }
 
+export interface Altitude {
+  min: number;
+  max: number;
+  mean: number;
+  n: number;
+}
+
+export interface OffsetProfileFit {
+  order: number;
+  /** Polynomial fit to the green leveling regions, in the same units as `height`. */
+  fitted: number[];
+  /** height − fitted. Red and blue altitudes are means of this. */
+  leveled: number[];
+  red: Altitude;
+  blue: Altitude;
+  /** Red mean minus blue mean. */
+  offset: number;
+}
+
+/** Level a profile on the green zones, then compare the red and blue regions. */
+export function fitOffsetProfile(
+  distance: number[],
+  height: number[],
+  levels: [number, number][],
+  red: [number, number],
+  blue: [number, number],
+  order: number,
+): OffsetProfileFit {
+  if (order < 0 || order > 4 || !Number.isInteger(order)) throw new Error("polynomial order must be 0 to 4");
+  const ref = indexes(distance, height, levels);
+  if (ref.length < order + 1) throw new Error("leveling regions need more points than the polynomial order");
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const i of ref) {
+    lo = Math.min(lo, distance[i]);
+    hi = Math.max(hi, distance[i]);
+  }
+  const span = hi - lo || 1;
+  const norm = (d: number) => (2 * (d - lo)) / span - 1;
+  const coef = lstsq(ref.map((i) => basis1(norm(distance[i]), order)), ref.map((i) => height[i]), 1e-12);
+  const fitted = distance.map((d, i) => (Number.isFinite(height[i]) ? dot(basis1(norm(d), order), coef) : NaN));
+  const leveled = fitted.map((f, i) => (Number.isFinite(height[i]) && Number.isFinite(f) ? height[i] - f : NaN));
+  const redStats = altitude(distance, leveled, red);
+  const blueStats = altitude(distance, leveled, blue);
+  return { order, fitted, leveled, red: redStats, blue: blueStats, offset: redStats.mean - blueStats.mean };
+}
+
+function indexes(distance: number[], height: number[], zones: [number, number][]): number[] {
+  const idx: number[] = [];
+  for (let i = 0; i < distance.length; i++) {
+    if (!Number.isFinite(height[i]) || !Number.isFinite(distance[i])) continue;
+    if (zones.some((zone) => distance[i] >= Math.min(zone[0], zone[1]) && distance[i] <= Math.max(zone[0], zone[1]))) idx.push(i);
+  }
+  return idx;
+}
+
+function altitude(distance: number[], leveled: number[], zone: [number, number]): Altitude {
+  const lo = Math.min(zone[0], zone[1]);
+  const hi = Math.max(zone[0], zone[1]);
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < distance.length; i++) {
+    if (distance[i] < lo || distance[i] > hi || !Number.isFinite(leveled[i])) continue;
+    min = Math.min(min, leveled[i]);
+    max = Math.max(max, leveled[i]);
+    sum += leveled[i];
+    n++;
+  }
+  if (!n) throw new Error("an altitude region has no samples");
+  return { min, max, mean: sum / n, n };
+}
+
 function pixelBox(zone: Rect, mmpp: number, cols: number, rows: number) {
   return {
     x0: clamp(Math.floor(Math.min(zone[0], zone[2]) / mmpp), 0, cols),
