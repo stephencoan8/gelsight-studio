@@ -8,6 +8,7 @@ import { readHeightFile, readZag, readZip, writeCsv, writeNpy, writeStl, writeTi
 import { alignAndDiff } from "./num/register";
 import { applyView, compute, type ViewOpts } from "./num/tools";
 import { evaluateTransfer } from "./num/transfer";
+import { discoverScans } from "./num/discover";
 import { nativeField } from "./num/field";
 import { perScanTable, validationReport } from "./num/validationReport";
 import { decodePng, pngDataUrl, toBase64 } from "./num/png";
@@ -628,7 +629,201 @@ export async function importFiles(files: File[], mmpp: number, zUnit: string, ta
   return created;
 }
 
-async function importSensorScan(yamlFile: File, siblings: { file: File; rel: string }[], tags: string[]): Promise<Scan> {
+export interface ImportSkip {
+  path: string;
+  reason: string;
+}
+
+function baseName(rel: string): string {
+  const cut = rel.replace(/\\/g, "/").lastIndexOf("/");
+  return cut < 0 ? rel : rel.slice(cut + 1);
+}
+
+function scanTitle(root: string): string {
+  if (!root) return "scan";
+  const parts = root.split("/");
+  return parts[parts.length - 1] || "scan";
+}
+
+async function expandZip(file: File, rel: string): Promise<{ file: File; rel: string }[]> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { files } = await readZip(bytes);
+  const stem = baseName(rel).replace(/\.zip$/i, "");
+  const parent = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+  const prefix = parent ? `${parent}/${stem}` : stem;
+  return Object.entries(files).filter(([, data]) => data.length).map(([name, data]) => {
+    const clean = name.replace(/\\/g, "/").replace(/^\/+/, "");
+    const leaf = clean.split("/").pop() || clean;
+    return { file: new File([copyBuffer(data)], leaf), rel: `${prefix}/${clean}` };
+  });
+}
+
+async function importScanGroup(entries: { file: File; rel: string }[], tags: string[], title: string, sourceKey: string): Promise<Scan> {
+  const yaml = entries.find((entry) => /^scan\.ya?ml$/i.test(baseName(entry.rel)));
+  if (yaml) return importSensorScan(yaml.file, entries, tags, title, sourceKey);
+  const tmd = entries.find((entry) => /\.tmd$/i.test(entry.rel) && !/\.bak$/i.test(entry.rel));
+  if (tmd) {
+    const map = await readHeightFile(tmd.rel, new Uint8Array(await tmd.file.arrayBuffer()), 0.0069, "mm");
+    const scan = await addMap({
+      ...map,
+      name: title,
+      rows: map.rows,
+      cols: map.cols,
+      tags: [...new Set([...tags, "sensor"])],
+      mmpp: map.mmpp || 0.0069,
+      source: map.source || "tmd",
+      meta: { ...(map.meta || {}), source_key: sourceKey },
+    });
+    const raw = await rawFrames(entries);
+    if (raw) await db.saveRaw(scan.id, raw);
+    return scan;
+  }
+  const images = [1, 2, 3, 4, 5, 6].map((n) => entries.find((entry) => baseName(entry.rel).toLowerCase() === `image0${n}.png`)).filter((entry): entry is { file: File; rel: string } => Boolean(entry));
+  const prepared = await prepareReconstruction(images, entries, {});
+  if (!prepared) throw new Error("no height file and no calibration");
+  const rebuilt = await reconstructImages({ ...prepared, factor: 4 });
+  const scan = await addMap({
+    name: title,
+    z: rebuilt.z,
+    rows: rebuilt.rows,
+    cols: rebuilt.cols,
+    mmpp: rebuilt.mmpp,
+    source: "sensor",
+    tags: [...new Set([...tags, "sensor"])],
+    notes: "Preview height. Full resolution follows.",
+    meta: { source_key: sourceKey, reconstructed: { factor: 4, k: prepared.k } },
+  });
+  const raw = await rawFrames(entries);
+  if (raw) await db.saveRaw(scan.id, raw);
+  await db.putCalibData(scan.id, {
+    quad: prepared.quad,
+    scale: prepared.scale,
+    flatH: prepared.flatH,
+    flatW: prepared.flatW,
+    flat: prepared.flat,
+  });
+  void finishFullResolution(scan.id, prepared);
+  return scan;
+}
+
+async function rawFrames(entries: { file: File; rel: string }[]): Promise<{ depth: number; width: number; height: number; data: Uint16Array } | null> {
+  const wanted = [1, 2, 3, 4, 5, 6].map((n) => `image0${n}.png`);
+  const byName = new Map(entries.map((entry) => [baseName(entry.rel).toLowerCase(), entry]));
+  if (!wanted.every((name) => byName.has(name))) return null;
+  const planes = [];
+  for (const name of wanted) planes.push(await decodeImage(byName.get(name)!.file));
+  const width = planes[0].w;
+  const height = planes[0].h;
+  if (planes.some((plane) => plane.w !== width || plane.h !== height)) return null;
+  const data = new Uint16Array(height * width * 6);
+  for (let i = 0; i < height * width; i++) for (let k = 0; k < 6; k++) data[i * 6 + k] = planes[k].gray[i];
+  return { depth: planes[0].depth, width, height, data };
+}
+
+export async function importCollection(
+  entries: { file: File; rel: string }[],
+  opts: { label?: string; tags?: string; onProgress?: (done: number, total: number, name: string) => void } = {},
+): Promise<{ imported: Scan[]; skipped: ImportSkip[] }> {
+  const label = opts.label || "drop";
+  const tags = (opts.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+  const skipped: ImportSkip[] = [];
+  const pool: { file: File; rel: string }[] = [];
+  const direct: { name: string; sourceKey: string; run: () => Promise<Scan> }[] = [];
+  for (const entry of entries) {
+    const lower = entry.rel.toLowerCase();
+    if (!lower.endsWith(".zip") && !lower.endsWith(".zag")) {
+      pool.push(entry);
+      continue;
+    }
+    const bytes = new Uint8Array(await entry.file.arrayBuffer());
+    try {
+      const maps = readZag(bytes);
+      if (maps.length) {
+        maps.forEach((map, index) => {
+          const sourceKey = `${label}/${baseName(entry.rel)}/${map.name || index}`;
+          direct.push({
+            name: map.name || baseName(entry.rel),
+            sourceKey,
+            run: () => addMap({ ...map, rows: map.rows, cols: map.cols, tags: [...tags, "keyence"], mmpp: map.mmpp || 0.0069, meta: { ...(map.meta || {}), source_key: sourceKey } }),
+          });
+        });
+        continue;
+      }
+    } catch {
+      /* not a keyence archive */
+    }
+    if (lower.endsWith(".zip")) {
+      try {
+        pool.push(...await expandZip(entry.file, entry.rel));
+      } catch (err) {
+        skipped.push({ path: entry.rel, reason: err instanceof Error ? err.message : "zip could not be read" });
+      }
+    } else skipped.push({ path: entry.rel, reason: "not a height archive" });
+  }
+  const found = discoverScans(pool.map((entry) => entry.rel));
+  skipped.push(...found.skipped);
+  const byRel = new Map(pool.map((entry) => [entry.rel.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, ""), entry]));
+  const existing = new Set((await db.allScans()).map((scan) => String(scan.meta.source_key || "")).filter(Boolean));
+  const jobs = [
+    ...direct,
+    ...found.scans.map((scan) => {
+      const sourceKey = `${label}/${scan.root || "."}`;
+      const name = scanTitle(scan.root);
+      return {
+        name,
+        sourceKey,
+        run: () => importScanGroup(scan.files.map((rel) => byRel.get(rel)).filter((entry): entry is { file: File; rel: string } => Boolean(entry)), tags, name, sourceKey),
+      };
+    }),
+  ];
+  const imported: Scan[] = [];
+  let done = 0;
+  for (const job of jobs) {
+    opts.onProgress?.(done, jobs.length, job.name);
+    if (existing.has(job.sourceKey)) {
+      skipped.push({ path: job.name, reason: "already imported" });
+      done++;
+      continue;
+    }
+    try {
+      imported.push(await job.run());
+      existing.add(job.sourceKey);
+    } catch (err) {
+      skipped.push({ path: job.name, reason: err instanceof Error ? err.message : "import failed" });
+    }
+    done++;
+    opts.onProgress?.(done, jobs.length, job.name);
+  }
+  if (!jobs.length && !skipped.length) skipped.push({ path: label, reason: "no scan folders" });
+  return { imported, skipped };
+}
+
+export async function rememberedFolder(): Promise<string | null> {
+  const handle = await db.getSetting("last_directory") as { name?: string } | null;
+  if (!handle || typeof handle !== "object" || typeof handle.name !== "string") return null;
+  return handle.name;
+}
+
+export async function rememberFolder(handle: unknown) {
+  await db.setSetting("last_directory", handle);
+}
+
+export async function lastFolder(): Promise<{ name: string; queryPermission?: (opts: { mode: "read" }) => Promise<PermissionState>; requestPermission?: (opts: { mode: "read" }) => Promise<PermissionState>; entries?: () => AsyncIterable<[string, FsHandle]> } | null> {
+  const handle = await db.getSetting("last_directory") as FsHandle | null;
+  if (!handle || typeof handle !== "object" || typeof handle.name !== "string" || !handle.entries) return null;
+  return handle;
+}
+
+interface FsHandle {
+  name: string;
+  kind?: string;
+  entries?: () => AsyncIterable<[string, FsHandle]>;
+  getFile?: () => Promise<File>;
+  queryPermission?: (opts: { mode: "read" }) => Promise<PermissionState>;
+  requestPermission?: (opts: { mode: "read" }) => Promise<PermissionState>;
+}
+
+async function importSensorScan(yamlFile: File, siblings: { file: File; rel: string }[], tags: string[], title?: string, sourceKey?: string): Promise<Scan> {
   const text = await yamlFile.text();
   const doc = parseScanYaml(text);
   const byName = new Map(siblings.map((s) => [s.rel.split("/").pop()!.toLowerCase(), s]));
@@ -690,7 +885,7 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
   }
   const folder = relOf(yamlFile);
   const scan = await addMap({
-    name: folder.includes("/") ? folder.split("/").slice(0, -1).pop() || "sensor scan" : "sensor scan",
+    name: title || (folder.includes("/") ? folder.split("/").slice(0, -1).pop() || "sensor scan" : "sensor scan"),
     z,
     rows,
     cols,
@@ -707,6 +902,7 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
       normal_map: doc.normal ?? null,
       calib: doc.calib ?? null,
       reconstructed: preparedFull ? { factor: 4, k: preparedFull.k } : undefined,
+      source_key: sourceKey ?? null,
     },
     photo,
   });
