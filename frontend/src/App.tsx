@@ -86,7 +86,7 @@ export function App() {
           </div>
           <div>
             <b>GelSight Studio</b>
-            <span>local metrology</span>
+            <span>in this browser</span>
           </div>
         </div>
         {nav.map((n, i) => (

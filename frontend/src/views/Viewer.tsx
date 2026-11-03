@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createRecipe, deleteMeasurement, loadField, measure, measurements, patchMeasurement, reportUrl, exportUrl } from "../api";
+import { createRecipe, deleteMeasurement, downloadExport, downloadReport, getScan, loadField, measure, measurements, onStatus, patchMeasurement, reconstruct } from "../api";
 import { HeightMap, limitsOf } from "../components/HeightMap";
 import { ProfilePlot, profileSeries } from "../components/ProfilePlot";
 import { Surface3D } from "../components/Surface3D";
@@ -28,6 +28,9 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
   const [redo, setRedo] = useState<Cmd[]>([]);
   const [regionArm, setRegionArm] = useState(false);
   const [photo, setPhoto] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [hasRaw, setHasRaw] = useState(false);
+  const [recon, setRecon] = useState("");
   const fitted = useRef("");
 
   const reload = useCallback(async () => {
@@ -42,12 +45,31 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
   }, [reload]);
 
   useEffect(() => {
+    getScan(scanId).then((s) => {
+      setPhotoUrl(s.photo || null);
+      setHasRaw(Boolean(s.meta?.needs_reconstruction) || Number(s.meta?.n_images) >= 6);
+    }).catch(() => setPhotoUrl(null));
+    return onStatus(setRecon);
+  }, [scanId, field]);
+
+  useEffect(() => {
     if (!field || fitted.current === scanId) return;
     fitted.current = scanId;
     const fov = Math.max(field.fullW, field.fullH) * field.fullMmpp;
     const amp = Math.max(Math.abs(field.zmin), Math.abs(field.zmax), 1) * 1e-3;
     setExag(Math.min(80, Math.max(1, (0.22 * fov) / amp)));
   }, [field, scanId]);
+
+  async function runRecon(factor: number) {
+    if (factor === 1 && !confirm("Full resolution is the published model. The Scan055 benchmark took 86 s across 6 workers. This stays in the browser.")) return;
+    setError(null);
+    try {
+      await reconstruct(scanId, factor);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "reconstruction failed");
+    }
+  }
 
   async function commit(body: Record<string, unknown>) {
     setError(null);
@@ -217,6 +239,13 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
           </button>
         ))}
         <button className={photo ? "tool active" : "tool"} onClick={() => setPhoto((p) => !p)}>Image</button>
+        {hasRaw && (
+          <>
+            <button className="tool" onClick={() => runRecon(4)}>Preview</button>
+            <button className="tool" onClick={() => runRecon(1)}>Full res</button>
+          </>
+        )}
+        {recon && <span className="mono" style={{ color: "var(--muted)" }}>{recon}</span>}
         <select value={cmap} onChange={(e) => setCmap(e.target.value as typeof cmap)} aria-label="Colour map">
           <option value="turbo">Turbo</option>
           <option value="gray">Grey</option>
@@ -231,7 +260,7 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
         {mode !== "3d" && field && (
           <div style={{ position: "relative", minHeight: 0 }}>
             {photo ? (
-              <img alt="Original" src={`/api/scans/${scanId}/photo.png`} style={{ width: "100%", height: "100%", objectFit: "contain", background: "var(--bg-inset)" }} onError={() => setPhoto(false)} />
+              <img alt="Original" src={photoUrl || ""} style={{ width: "100%", height: "100%", objectFit: "contain", background: "var(--bg-inset)" }} onError={() => setPhoto(false)} />
             ) : (
               <HeightMap
                 field={field}
@@ -340,11 +369,11 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
           >
             Save as recipe
           </button>
-          <a className="btn" href={reportUrl(scanId, "pdf")}>PDF</a>
-          <a className="btn" href={reportUrl(scanId, "csv")}>CSV</a>
-          <a className="btn" href={exportUrl(scanId, "tiff")}>TIFF</a>
-          <a className="btn" href={exportUrl(scanId, "npy")}>NPY</a>
-          <a className="btn" href={exportUrl(scanId, "stl")}>STL</a>
+          <button className="btn" onClick={() => downloadReport(scanId, "pdf").catch((e: Error) => setError(e.message))}>PDF</button>
+          <button className="btn" onClick={() => downloadReport(scanId, "csv").catch((e: Error) => setError(e.message))}>CSV</button>
+          <button className="btn" onClick={() => downloadExport(scanId, "tiff").catch((e: Error) => setError(e.message))}>TIFF</button>
+          <button className="btn" onClick={() => downloadExport(scanId, "npy").catch((e: Error) => setError(e.message))}>NPY</button>
+          <button className="btn" onClick={() => downloadExport(scanId, "stl").catch((e: Error) => setError(e.message))}>STL</button>
         </div>
       </aside>
       {series && (

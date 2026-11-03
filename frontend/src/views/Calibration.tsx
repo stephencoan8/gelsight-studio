@@ -8,6 +8,7 @@ import {
   plateFromScans,
   setActiveCalibration,
   uploadYaml,
+  validation,
   getScans,
 } from "../api";
 import { num, um } from "../format";
@@ -235,10 +236,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
               disabled={!cal}
               onClick={async () => {
                 if (!cal) return;
-                const report = await fetch("/api/validation").then((r) => r.json());
-                const per = report.grooves.map((g: { qf1_mean_um: number }) => g.qf1_mean_um);
-                // The published table is per rotation, not the mean. Ask the reference loader instead.
-                void per;
+                await validation();
                 const updated = await loadReference();
                 setCal(updated);
                 setStep(4);

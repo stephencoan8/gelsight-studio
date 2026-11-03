@@ -89,7 +89,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
         {scans.map((s) => (
           <article key={s.id} className="card">
             <button onClick={() => open(s.id)} style={{ all: "unset", cursor: "pointer" }}>
-              <img src={`/api/scans/${s.id}/thumb.png`} alt="" />
+              {s.thumb ? <img src={s.thumb} alt="" /> : <div style={{ height: 140, background: "var(--bg-inset)" }} />}
               <div className="body">
                 <h3>{s.name}</h3>
                 <p>

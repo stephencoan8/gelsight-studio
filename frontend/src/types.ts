@@ -11,6 +11,8 @@ export type Scan = {
   height: number;
   fov_mm: number[];
   meta: Record<string, unknown>;
+  thumb?: string;
+  photo?: string;
 };
 
 export type Measurement = {

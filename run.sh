@@ -1,34 +1,23 @@
 #!/usr/bin/env bash
-# One command for GelSight Studio.
-#   ./run.sh         install, build, and serve at http://127.0.0.1:8000
-#   ./run.sh dev     API plus a Vite dev server with reload
-#   ./run.sh test    ruff, pytest, and the TypeScript check
+# GelSight Studio is a static site. Processing runs in the browser.
+#   ./run.sh         install, build, and preview at http://127.0.0.1:8000/gelsight-studio/
+#   ./run.sh dev     Vite with reload at http://127.0.0.1:5173/gelsight-studio/
+#   ./run.sh test    vitest and the TypeScript build
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$ROOT"
-PY="$ROOT/.venv/bin/python"
-PIP="$ROOT/.venv/bin/pip"
-
-if [[ ! -x "$PY" ]]; then
-  python3 -m venv "$ROOT/.venv"
-fi
-"$PIP" install -q -r "$ROOT/requirements.txt"
-
+cd "$ROOT/frontend"
+npm install
 cmd="${1:-serve}"
 case "$cmd" in
   test)
-    "$ROOT/.venv/bin/ruff" check gelsight studio backend tests
-    "$PY" -m pytest -q
-    (cd "$ROOT/frontend" && npm install && npm run lint && npm run build)
+    npm test
+    npm run build
     ;;
   dev)
-    (cd "$ROOT/frontend" && npm install)
-    "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
-    trap 'kill %1' EXIT
-    cd "$ROOT/frontend" && npm run dev
+    exec npm run dev -- --host 127.0.0.1
     ;;
   serve|*)
-    (cd "$ROOT/frontend" && npm install && npm run build)
-    exec "$PY" -m uvicorn backend.main:app --host "${STUDIO_HOST:-127.0.0.1}" --port "${STUDIO_PORT:-8000}"
+    npm run build
+    exec npm run preview -- --host 127.0.0.1 --port "${STUDIO_PORT:-8000}"
     ;;
 esac

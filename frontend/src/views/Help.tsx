@@ -9,7 +9,7 @@ export function Help({ onClose }: { onClose?: () => void }) {
         {onClose && <button className="btn" onClick={onClose}>Close</button>}
       </div>
       <p className="lede">
-        GelSight Studio is a local instrument for tactile height maps. It is not affiliated with GelSight, Inc. The reconstruction and the plate correction are the model recorded in the experiment log shipped with this repository. The app does not fit a new reflectance law and then call it better.
+        GelSight Studio runs entirely in this browser. Scans are opened from your disk and kept in this browser’s storage; they are not uploaded. It is not affiliated with GelSight, Inc. The reconstruction and the plate correction are the model recorded in the experiment log shipped with this repository. The app does not fit a new reflectance law and then call it better.
       </p>
       <h2>The model</h2>
       <p>Six images, the GelSight flat field, gamma 0.7, and the calibration’s quadfit coefficients produce a normal at each pixel. Height is the Neumann Poisson integral (DCT) of the slopes, multiplied by K = camera mm-per-pixel / scan mm-per-pixel. The published comparison used full resolution and no slope clamp.</p>
