@@ -299,10 +299,6 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
       </div>
       <aside className="inspector">
         <h2>{guide.label}</h2>
-        <div className="guide">
-          <b>Setup. </b>
-          {guide.hint} Reference regions for a groove sit outside the half-depth width, one on each side. Hole diameter uses 25 µm below the local land (annulus 1.15–1.5 R), because the gel sags 5–12 µm around a hole.
-        </div>
         {(tool === "profile" || tool === "groove" || tool === "step") && (
           <label className="field" style={{ marginBottom: 8 }}>
             Averaging width (mm)
@@ -364,17 +360,22 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
                 name,
                 steps: items.map((m) => ({ kind: m.kind, name: m.name, params: m.params, geometry: m.geometry, view: m.view })),
               });
-              alert("Recipe saved. Apply it from Recipes.");
+              alert("Recipe saved.");
             }}
           >
             Save as recipe
           </button>
-          <button className="btn" onClick={() => downloadReport(scanId, "pdf").catch((e: Error) => setError(e.message))}>PDF</button>
-          <button className="btn" onClick={() => downloadReport(scanId, "csv").catch((e: Error) => setError(e.message))}>CSV</button>
-          <button className="btn" onClick={() => downloadExport(scanId, "tiff").catch((e: Error) => setError(e.message))}>TIFF</button>
-          <button className="btn" onClick={() => downloadExport(scanId, "npy").catch((e: Error) => setError(e.message))}>NPY</button>
-          <button className="btn" onClick={() => downloadExport(scanId, "stl").catch((e: Error) => setError(e.message))}>STL</button>
         </div>
+        <details className="fold">
+          <summary>Export</summary>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn" onClick={() => downloadReport(scanId, "pdf").catch((e: Error) => setError(e.message))}>PDF</button>
+            <button className="btn" onClick={() => downloadReport(scanId, "csv").catch((e: Error) => setError(e.message))}>CSV</button>
+            <button className="btn" onClick={() => downloadExport(scanId, "tiff").catch((e: Error) => setError(e.message))}>TIFF</button>
+            <button className="btn" onClick={() => downloadExport(scanId, "npy").catch((e: Error) => setError(e.message))}>NPY</button>
+            <button className="btn" onClick={() => downloadExport(scanId, "stl").catch((e: Error) => setError(e.message))}>STL</button>
+          </div>
+        </details>
       </aside>
       {series && (
         <div className="plotdock">
@@ -440,9 +441,6 @@ function Editor({ m, onChange, onDelete }: { m: Measurement; onChange: (b: Recor
         <button className="btn" onClick={() => onChange({ name })}>Update</button>
         <button className="btn danger" onClick={onDelete}>Delete</button>
       </div>
-      <p style={{ color: "var(--faint)", fontSize: 12 }}>
-        Coordinates are in the geometry. Change a threshold or the name and update; the number is recomputed on the full-resolution map.
-      </p>
     </div>
   );
 }

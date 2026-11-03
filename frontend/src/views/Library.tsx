@@ -44,12 +44,11 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
     <div className="page">
       <div className="row">
         <div>
-          <h1>Library</h1>
-          <p className="lede">Scans stay on this machine. Search by name, tag, or note.</p>
+          <h1>Scans</h1>
         </div>
         <div className="spacer" />
         <button className="btn" onClick={() => seedDemo().then(() => { refresh(); onChanged?.(); })}>
-          Load demonstration set
+          Demo
         </button>
         <button className="btn-primary" onClick={() => setImportOpen(true)}>
           Import
@@ -81,9 +80,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
       </div>
       {error && <div className="callout warn">{error}</div>}
       {!scans.length && !error && (
-        <div className="panel">
-          No scans yet. Import a tactile sensor scan folder (.tmd/.yaml), a Keyence .zag, or a height map — or load the demonstration set. The demonstration plate is synthetic and is not the stylus comparison.
-        </div>
+        <div className="panel">No scans.</div>
       )}
       <div className="cards">
         {scans.map((s) => (
@@ -136,9 +133,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
         <div className="modal-back" onClick={() => setImportOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2 style={{ marginTop: 0 }}>Import</h2>
-            <p className="lede">
-              A tactile sensor scan folder (.tmd/.yaml), a Keyence .zag, or a TIFF, PNG, CSV, or NPY height map. Pixel size is read from the scan folder and from Keyence files. For a bare height map, set it here. Heights in the file are interpreted in the unit you choose and stored as millimetres.
-            </p>
+            <p className="lede">Folder, .zag, or a height map.</p>
             <div className="row">
               <label className="field">
                 mm / pixel

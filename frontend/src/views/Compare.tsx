@@ -23,9 +23,6 @@ export function Compare() {
   return (
     <div className="page">
       <h1>Compare</h1>
-      <p className="lede">
-        The second scan is resampled onto the first, rotated in 90° steps, and shifted by phase correlation on the high-pass height. The difference is first minus aligned second, in micrometres.
-      </p>
       <div className="row">
         <label className="field">Scan A<select value={a} onChange={(e) => setA(e.target.value)}>{scans.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
         <label className="field">Scan B<select value={b} onChange={(e) => setB(e.target.value)}>{scans.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
