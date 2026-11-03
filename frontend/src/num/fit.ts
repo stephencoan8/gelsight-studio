@@ -241,3 +241,95 @@ function dot(a: number[], b: number[]): number {
 function clamp(v: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, v));
 }
+
+export interface RegionFit {
+  order: number;
+  /** Mean of measured − fit along the line. The polynomial uses only the zone pixels. */
+  offset: number;
+  min: number;
+  max: number;
+  nReference: number;
+  nFeature: number;
+  fitted: number[];
+}
+
+/** Fit `order` to every pixel inside the level rectangles. Rectangles and the line are in millimetres. Heights are micrometres. */
+export function fitLevelRegions(
+  z: ArrayLike<number>,
+  cols: number,
+  rows: number,
+  mmpp: number,
+  zones: Rect[],
+  xs: number[],
+  ys: number[],
+  height: number[],
+  order: number,
+): RegionFit {
+  if (order < 0 || !Number.isInteger(order)) throw new Error("polynomial order must be a non-negative integer");
+  const terms = powers(order);
+  const boxes = zones.map((zone) => pixelBox(zone, mmpp, cols, rows)).filter((box) => box.x1 - box.x0 >= 1 && box.y1 - box.y0 >= 1);
+  if (!boxes.length) throw new Error("level zones are empty");
+  let ox0 = Infinity, oy0 = Infinity, ox1 = -Infinity, oy1 = -Infinity;
+  for (const box of boxes) {
+    ox0 = Math.min(ox0, box.x0);
+    oy0 = Math.min(oy0, box.y0);
+    ox1 = Math.max(ox1, box.x1);
+    oy1 = Math.max(oy1, box.y1);
+  }
+  const spanX = Math.max(ox1 - ox0, 1);
+  const spanY = Math.max(oy1 - oy0, 1);
+  const nT = terms.length;
+  const ata = Array.from({ length: nT }, () => new Float64Array(nT));
+  const atb = new Float64Array(nT);
+  let nReference = 0;
+  for (const box of boxes) {
+    for (let y = box.y0; y < box.y1; y++) {
+      for (let x = box.x0; x < box.x1; x++) {
+        const v = z[y * cols + x];
+        if (!Number.isFinite(v)) continue;
+        const row = basis2((2 * (x - ox0)) / spanX - 1, (2 * (y - oy0)) / spanY - 1, terms);
+        for (let j = 0; j < nT; j++) {
+          atb[j] += row[j] * v;
+          for (let k = j; k < nT; k++) ata[j][k] += row[j] * row[k];
+        }
+        nReference++;
+      }
+    }
+  }
+  if (nReference < nT) throw new Error("level zones need more points than the polynomial order");
+  const normal = ata.map((row) => Array.from(row));
+  for (let j = 0; j < nT; j++) {
+    for (let k = 0; k < j; k++) normal[j][k] = normal[k][j];
+    normal[j][j] += 1e-10;
+  }
+  const coef = solveSquare(normal, Array.from(atb));
+  const predict = (xmm: number, ymm: number) => {
+    const x = xmm / mmpp - 0.5;
+    const y = ymm / mmpp - 0.5;
+    return dot(basis2((2 * (x - ox0)) / spanX - 1, (2 * (y - oy0)) / spanY - 1, terms), coef);
+  };
+  const fitted = xs.map((x, i) => (Number.isFinite(height[i]) ? predict(x, ys[i]) : NaN));
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < height.length; i++) {
+    if (!Number.isFinite(height[i]) || !Number.isFinite(fitted[i])) continue;
+    const d = height[i] - fitted[i];
+    min = Math.min(min, d);
+    max = Math.max(max, d);
+    sum += d;
+    n++;
+  }
+  if (!n) throw new Error("the line has no samples");
+  return { order, offset: sum / n, min, max, nReference, nFeature: n, fitted };
+}
+
+function pixelBox(zone: Rect, mmpp: number, cols: number, rows: number) {
+  return {
+    x0: clamp(Math.floor(Math.min(zone[0], zone[2]) / mmpp), 0, cols),
+    x1: clamp(Math.ceil(Math.max(zone[0], zone[2]) / mmpp), 0, cols),
+    y0: clamp(Math.floor(Math.min(zone[1], zone[3]) / mmpp), 0, rows),
+    y1: clamp(Math.ceil(Math.max(zone[1], zone[3]) / mmpp), 0, rows),
+  };
+}
