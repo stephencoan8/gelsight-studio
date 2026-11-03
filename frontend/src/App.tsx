@@ -7,14 +7,15 @@ import { Help } from "./views/Help";
 import { Library } from "./views/Library";
 import { Recipes } from "./views/Recipes";
 import { Validation } from "./views/Validation";
+import { Surface } from "./views/Surface";
 import { Viewer } from "./views/Viewer";
 
-type Page = "library" | "viewer" | "calibrate" | "recipes" | "compare" | "validation" | "help";
+type Page = "library" | "viewer" | "tools" | "calibrate" | "recipes" | "compare" | "validation" | "help";
 
 function readRoute(): { page: Page; scan: string | null } {
   const h = location.hash.replace(/^#\/?/, "");
   const [page, scan] = h.split("/");
-  const known: Page[] = ["library", "viewer", "calibrate", "recipes", "compare", "validation", "help"];
+  const known: Page[] = ["library", "viewer", "tools", "calibrate", "recipes", "compare", "validation", "help"];
   return { page: (known.includes(page as Page) ? page : "library") as Page, scan: scan || null };
 }
 
@@ -24,6 +25,7 @@ export function App() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [help, setHelp] = useState(false);
   const [more, setMore] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
   const [plate, setPlate] = useState<string>("");
 
   const go = useCallback((p: Page, id?: string | null) => {
@@ -71,6 +73,7 @@ export function App() {
   const nav: { id: Page; label: string }[] = [
     { id: "library", label: "Scans" },
     { id: "viewer", label: "Surface" },
+    { id: "tools", label: "Tools" },
     { id: "calibrate", label: "Calibrate" },
     { id: "recipes", label: "Recipes" },
     { id: "compare", label: "Compare" },
@@ -79,7 +82,7 @@ export function App() {
   ];
   const primary = nav.slice(0, 2);
   const secondary = nav.slice(2);
-  const showMore = more || secondary.some((n) => n.id === page);
+  const showMore = more || (advanced && secondary.some((n) => n.id === page));
 
   return (
     <div className="shell">
@@ -103,15 +106,27 @@ export function App() {
         </button>
         {showMore && (
           <div className="more">
-            {secondary.map((n) => (
+            <button
+              className={advanced ? "item active" : "item"}
+              onClick={() => {
+                const next = !advanced;
+                setAdvanced(next);
+                if (!next && secondary.some((n) => n.id === page)) go("library");
+              }}
+            >
+              <span>Advanced</span>
+            </button>
+            {advanced && secondary.map((n) => (
               <button key={n.id} className={page === n.id ? "item active" : "item"} onClick={() => go(n.id)}>
                 <span>{n.label}</span>
               </button>
             ))}
-            <details className="fold">
-              <summary>Correction</summary>
-              <div>{plate || "None"}</div>
-            </details>
+            {advanced && (
+              <details className="fold">
+                <summary>Correction</summary>
+                <div>{plate || "None"}</div>
+              </details>
+            )}
             <button className="item" onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}>
               <span>{theme === "dark" ? "Light theme" : "Dark theme"}</span>
             </button>
@@ -120,7 +135,8 @@ export function App() {
       </nav>
       <main className="main">
         {page === "library" && <Library open={(id) => go("viewer", id)} onChanged={refreshPlate} />}
-        {page === "viewer" && (scan ? <Viewer scanId={scan} onCursor={setCursor} /> : <div className="page"><h1>Surface</h1><button className="btn-primary" onClick={() => go("library")}>Open a scan</button></div>)}
+        {page === "viewer" && (scan ? <Surface scanId={scan} onCursor={setCursor} /> : <div className="page"><h1>Surface</h1><button className="btn-primary" onClick={() => go("library")}>Open a scan</button></div>)}
+        {page === "tools" && (scan ? <Viewer scanId={scan} onCursor={setCursor} /> : <div className="page"><h1>Tools</h1><button className="btn-primary" onClick={() => go("library")}>Open a scan</button></div>)}
         {page === "calibrate" && <CalibrationView onActive={refreshPlate} />}
         {page === "recipes" && <Recipes />}
         {page === "compare" && <Compare />}

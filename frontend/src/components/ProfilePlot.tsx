@@ -20,9 +20,15 @@ export function profileSeries(m: Measurement | null): { x: number[]; y: (number 
 export function ProfilePlot({
   series,
   cursorX,
+  zones,
+  fit,
+  onPick,
 }: {
   series: { x: number[]; y: (number | null)[]; xlabel: string; title: string } | null;
   cursorX?: number | null;
+  zones?: [number, number][];
+  fit?: (number | null)[];
+  onPick?: (x: number) => void;
 }) {
   if (!series || series.x.length < 2) {
     return <div style={{ padding: 16, color: "var(--faint)" }}>Select a profile, step, scratch, or hole to plot it. Groove depths are listed on the right.</div>;
@@ -51,8 +57,27 @@ export function ProfilePlot({
     d += `${d ? "L" : "M"}${px(series.x[i]).toFixed(1)},${py(y).toFixed(1)}`;
   });
   const ticks = [0, 0.5, 1].map((f) => y0 + f * (y1 - y0));
+  const fitPath = fit
+    ? fit.map((y, i) => (typeof y === "number" && Number.isFinite(y) ? `${i ? "L" : "M"}${px(series.x[i]).toFixed(1)},${py(y).toFixed(1)}` : "")).join("")
+    : "";
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={series.title}>
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      aria-label={series.title}
+      style={{ cursor: onPick ? "crosshair" : undefined }}
+      onClick={onPick ? (e) => {
+        const svg = e.currentTarget;
+        const pt = svg.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const ctm = svg.getScreenCTM();
+        if (!ctm) return;
+        const p = pt.matrixTransform(ctm.inverse());
+        const x = x0 + ((p.x - L) / (W - L - R)) * (x1 - x0);
+        if (x >= x0 && x <= x1) onPick(x);
+      } : undefined}
+    >
       <text x={L} y={12} fill="var(--muted)" fontSize="11">
         {series.title}
       </text>
@@ -64,7 +89,11 @@ export function ProfilePlot({
           </text>
         </g>
       ))}
+      {(zones || []).map(([a, b], i) => (
+        <rect key={i} x={px(Math.min(a, b))} y={T} width={Math.abs(px(b) - px(a))} height={H - T - B} fill="rgba(61,190,122,0.18)" />
+      ))}
       <path d={d} fill="none" stroke="#4aa3ff" strokeWidth="1.6" />
+      {fitPath && <path d={fitPath} fill="none" stroke="#e2a84b" strokeWidth="1.4" />}
       {cursorX != null && cursorX >= x0 && cursorX <= x1 && (
         <line x1={px(cursorX)} x2={px(cursorX)} y1={T} y2={H - B} stroke="var(--warn)" strokeDasharray="3 3" />
       )}

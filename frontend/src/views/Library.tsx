@@ -51,7 +51,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
           Demo
         </button>
         <button className="btn-primary" onClick={() => setImportOpen(true)}>
-          Import
+          Open
         </button>
       </div>
       <div className="row" style={{ marginBottom: 16 }}>
@@ -132,8 +132,8 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
       {importOpen && (
         <div className="modal-back" onClick={() => setImportOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0 }}>Import</h2>
-            <p className="lede">Folder, .zag, or a height map.</p>
+            <h2 style={{ marginTop: 0 }}>Open scan</h2>
+            <p className="lede">One scan folder, or a zip of that folder. The height file is used when it is present.</p>
             <div className="row">
               <label className="field">
                 mm / pixel

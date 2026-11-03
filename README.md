@@ -35,7 +35,11 @@ docker compose up --build
 
 That listens on <http://127.0.0.1:8080/surface-measurement/>.
 
-The first screen is empty. **Load demonstration set** builds a synthetic validation plate (tagged synthetic) so the tools can be tried without a sensor. The validation page does not use that plate. It recomputes the published comparison from the stored per-scan table.
+The first screen is the scan list. **Open** takes one scan folder, or a zip of that folder: six images, a normal map, one calibration yaml and its png, a `.tmd` height file, `scan.yaml`, and a thumbnail. The `.tmd` is the height map. If it is missing, height is reconstructed from the six images and the calibration that sits in the same folder. The ball, flat, and groove calibration set is not part of a scan.
+
+**Surface** is a top-down height map with two measurements, both from the same polynomial fit to a reference region you choose. **Offset** is a line, reference zones on the profile, and an order. **Scratch** is an inner box and an outer box; the fit is fourth order on the frame between them, and the readout is the min and max inside the inner box.
+
+**Demo** builds a synthetic plate so those two workflows can be tried without a sensor. Calibrate, validation, and the older tools stay behind **More → Advanced**.
 
 Scans, calibrations, measurements, and recipes are stored in IndexedDB. Height maps and the six raw frames, when a sensor folder includes them, go in the origin private file system (IndexedDB if that API is missing). Closing the tab does not upload them.
 

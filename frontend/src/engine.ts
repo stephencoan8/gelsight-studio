@@ -659,26 +659,37 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
     mmpp = map.mmpp || mmpp;
     notes = map.notes || "";
   } else if (images.length >= 6) {
-    const first = await decodeImage(images[0].file);
-    rows = first.h;
-    cols = first.w;
-    z = new Float32Array(rows * cols);
-    notes = "No .tmd in this folder. Reconstruct from the six images with a sensor profile.";
-    needs = true;
-  } else throw new Error(`${yamlFile.name} has neither a .tmd nor six images`);
-  let photo: string | undefined;
+    const rebuilt = await reconstructFolder(images, siblings, doc);
+    if (rebuilt) {
+      z = rebuilt.z;
+      rows = rebuilt.rows;
+      cols = rebuilt.cols;
+      mmpp = rebuilt.mmpp;
+      notes = "Height reconstructed from the six images and the calibration in this folder.";
+    } else {
+      const first = await decodeImage(images[0].file);
+      rows = first.h;
+      cols = first.w;
+      z = new Float32Array(rows * cols);
+      notes = "No height file in this folder, and the calibration could not be applied.";
+      needs = true;
+    }
+  } else throw new Error(`${yamlFile.name} has neither a height file nor six images`);
+  const thumb = byName.get("thumbnail.jpg") || byName.get("thumbnail.jpeg");
+  let photo: string | undefined = thumb ? await fileToDataUrl(thumb.file) : undefined;
   let raw: { depth: number; width: number; height: number; data: Uint16Array } | undefined;
-  if (images.length >= 6) {
+  if (!photo && images[0]) photo = await photoOf(await decodeImage(images[0].file));
+  if (!tmd && images.length >= 6) {
     const planes = [];
     for (const image of images.slice(0, 6)) planes.push(await decodeImage(image.file));
     const w = planes[0].w;
     const h = planes[0].h;
-    if (planes.some((p) => p.w !== w || p.h !== h)) throw new Error("the six images do not share a size");
-    const data = new Uint16Array(h * w * 6);
-    for (let i = 0; i < h * w; i++) for (let k = 0; k < 6; k++) data[i * 6 + k] = planes[k].gray[i];
-    raw = { depth: planes[0].depth, width: w, height: h, data };
-    photo = await photoOf(planes[0]);
-  } else if (images[0]) photo = await photoOf(await decodeImage(images[0].file));
+    if (planes.every((p) => p.w === w && p.h === h)) {
+      const data = new Uint16Array(h * w * 6);
+      for (let i = 0; i < h * w; i++) for (let k = 0; k < 6; k++) data[i * 6 + k] = planes[k].gray[i];
+      raw = { depth: planes[0].depth, width: w, height: h, data };
+    }
+  }
   const folder = relOf(yamlFile);
   const scan = await addMap({
     name: folder.includes("/") ? folder.split("/").slice(0, -1).pop() || "sensor scan" : "sensor scan",
@@ -689,11 +700,78 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
     source: "sensor",
     tags: [...new Set([...tags, "sensor", ...(needs ? ["needs-reconstruction"] : [])])],
     notes,
-    meta: { mmperpixel: doc.mmpp ?? null, n_images: images.length, needs_reconstruction: needs, sensor_mmpp: mmpp },
+    meta: {
+      mmperpixel: doc.mmpp ?? null,
+      n_images: images.length,
+      needs_reconstruction: needs,
+      sensor_mmpp: mmpp,
+      height_file: doc.active ?? null,
+      normal_map: doc.normal ?? null,
+      calib: doc.calib ?? null,
+    },
     photo,
   });
   if (raw) await db.saveRaw(scan.id, raw);
   return scan;
+}
+
+async function reconstructFolder(
+  images: { file: File }[],
+  siblings: { file: File; rel: string }[],
+  doc: { mmpp?: number; calib?: string },
+): Promise<{ z: Float32Array; rows: number; cols: number; mmpp: number } | null> {
+  const byName = new Map(siblings.map((s) => [s.rel.split("/").pop()!.toLowerCase(), s]));
+  const calibName = doc.calib?.split(/[/\\]/).pop()?.toLowerCase();
+  const calibFile = (calibName && byName.get(calibName)) || siblings.find((s) => /^calib-.*\.ya?ml$/i.test(s.rel.split("/").pop() || ""));
+  if (!calibFile) return null;
+  const parsed = parseCalibYaml(await calibFile.file.text(), calibFile.file.name);
+  const pngName = calibFile.file.name.replace(/\.ya?ml$/i, ".png").toLowerCase();
+  const pngFile = byName.get(pngName) || siblings.find((s) => /^calib-.*\.png$/i.test(s.rel.split("/").pop() || ""));
+  if (!pngFile) return null;
+  const png = await decodePng(new Uint8Array(await pngFile.file.arrayBuffer()));
+  const tiles = splitFlatfield(png.samples, png.width, png.height, png.depth);
+  const planes = [];
+  for (const image of images.slice(0, 6)) planes.push(await decodeImage(image.file));
+  const width = planes[0].w;
+  const height = planes[0].h;
+  if (planes.some((p) => p.w !== width || p.h !== height)) return null;
+  const frames = new Float32Array(height * width * 6);
+  const denom = planes[0].depth === 16 ? 65535 : 255;
+  for (let i = 0; i < height * width; i++) {
+    for (let k = 0; k < 6; k++) frames[i * 6 + k] = planes[k].gray[i] / denom;
+  }
+  const scanMmpp = doc.mmpp || parsed.mmpp || 0.0069;
+  const k = parsed.mmpp && scanMmpp ? parsed.mmpp / scanMmpp : 1;
+  const out = await reconstructImages({
+    images: frames,
+    height,
+    width,
+    quad: parsed.quad,
+    flat: tiles.data,
+    flatH: tiles.fh,
+    flatW: tiles.fw,
+    scale: parsed.scale,
+    mmpp: scanMmpp,
+    k,
+    factor: 4,
+  });
+  return out;
+}
+
+async function fileToDataUrl(file: File): Promise<string | undefined> {
+  if (typeof createImageBitmap !== "function") return undefined;
+  try {
+    const bmp = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    const max = 480;
+    const f = Math.max(1, Math.max(bmp.width, bmp.height) / max);
+    canvas.width = Math.max(1, Math.round(bmp.width / f));
+    canvas.height = Math.max(1, Math.round(bmp.height / f));
+    canvas.getContext("2d")?.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return undefined;
+  }
 }
 
 async function decodeImage(file: File): Promise<{ w: number; h: number; depth: number; gray: Uint16Array }> {
