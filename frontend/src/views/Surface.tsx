@@ -3,7 +3,7 @@ import { loadField, loadFrames, onHeightUpdated, upgradeHeight } from "../api";
 import { HeightMap } from "../components/HeightMap";
 import { ProfilePlot } from "../components/ProfilePlot";
 import { sampleLine } from "../num/field";
-import { fitAnnulus, fitProfile, type AnnulusFit, type ProfileFit } from "../num/fit";
+import { fitAnnulus, fitLevels, type AnnulusFit, type LevelFit } from "../num/fit";
 import type { Cursor, Field, Measurement, Tool } from "../types";
 
 const EMPTY_VIEW = { level: "none" as const, poly_deg: 4, gaussian_mm: 0, median_px: 0, form_mm: 0 };
@@ -13,9 +13,9 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
   const [error, setError] = useState<string | null>(null);
   const [workflow, setWorkflow] = useState<"offset" | "scratch">("offset");
   const [line, setLine] = useState<{ x: number; y: number }[]>([]);
-  const [marks, setMarks] = useState<number[]>([]);
   const [order, setOrder] = useState(1);
-  const [profileFit, setProfileFit] = useState<ProfileFit | null>(null);
+  const [topZone, setTopZone] = useState<[number, number] | null>(null);
+  const [bottomZone, setBottomZone] = useState<[number, number] | null>(null);
   const [inner, setInner] = useState<number[] | null>(null);
   const [outer, setOuter] = useState<number[] | null>(null);
   const [scratch, setScratch] = useState<AnnulusFit | null>(null);
@@ -25,8 +25,8 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
 
   useEffect(() => {
     setLine([]);
-    setMarks([]);
-    setProfileFit(null);
+    setTopZone(null);
+    setBottomZone(null);
     setInner(null);
     setOuter(null);
     setScratch(null);
@@ -42,7 +42,17 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
   }, [scanId]);
 
   const profile = field && line.length === 2 ? sampleProfile(field, line[0], line[1]) : null;
-  const zones = pairZones(marks);
+  const lineKey = line.length === 2 ? `${line[0].x},${line[0].y},${line[1].x},${line[1].y}` : "";
+  useEffect(() => {
+    if (!profile || !lineKey) return;
+    const a = profile.distance[0];
+    const b = profile.distance[profile.distance.length - 1];
+    const w = Math.max((b - a) * 0.18, (b - a) / Math.max(profile.distance.length, 1));
+    setTopZone([a, a + w]);
+    setBottomZone([b - w, b]);
+    // New line, new default zones at the two ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineKey]);
 
   useEffect(() => {
     if (!field || !inner || !outer) {
@@ -60,14 +70,13 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
     }
   }, [field, inner, outer]);
 
-  function fitOffset() {
-    if (!profile) return;
+  let levelFit: LevelFit | null = null;
+  let levelError: string | null = null;
+  if (profile && topZone && bottomZone) {
     try {
-      setProfileFit(fitProfile(profile.distance, profile.height, zones, order));
-      setError(null);
+      levelFit = fitLevels(profile.distance, profile.height, topZone, bottomZone, order);
     } catch (e) {
-      setProfileFit(null);
-      setError(e instanceof Error ? e.message : "fit failed");
+      levelError = e instanceof Error ? e.message : "fit failed";
     }
   }
 
@@ -76,16 +85,15 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
     return grayImage(frames.planes[channel - 1], frames.width, frames.height, frames.depth, field.w, field.h);
   }, [field, frames, channel]);
 
-  const marksReady = zones.length >= 1;
   const tool: Tool = workflow === "scratch" && (!inner || !outer) ? "area" : workflow === "offset" && line.length < 2 ? "profile" : "navigate";
-  const overlays = overlaysOf(line, inner, outer);
+  const overlays = overlaysOf(line, inner, outer, profile && topZone && bottomZone ? { top: topZone, bottom: bottomZone, length: profile.length } : null);
 
   return (
     <div className={profile && workflow === "offset" ? "viewer" : "viewer no-plot"}>
       <div className="toolbar">
         <button className={workflow === "offset" ? "tool active" : "tool"} onClick={() => setWorkflow("offset")}>Offset</button>
         <button className={workflow === "scratch" ? "tool active" : "tool"} onClick={() => setWorkflow("scratch")}>Scratch</button>
-        <button className="btn" onClick={() => { setLine([]); setMarks([]); setProfileFit(null); setInner(null); setOuter(null); setScratch(null); setError(null); }}>Clear</button>
+        <button className="btn" onClick={() => { setLine([]); setTopZone(null); setBottomZone(null); setInner(null); setOuter(null); setScratch(null); setError(null); }}>Clear</button>
         <button className={pixel ? "tool active" : "tool"} onClick={() => setPixel((p) => !p)}>{pixel ? "Fit" : "1:1"}</button>
         {field && <span className="mono">{field.w}×{field.h}</span>}
         {frames && (
@@ -112,7 +120,6 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
           onClick={(x, y) => {
             if (workflow !== "offset" || line.length >= 2) return;
             setLine((pts) => [...pts, { x, y }]);
-            setProfileFit(null);
           }}
           pixelPerfect={pixel}
           onRect={(x0, y0, x1, y1) => {
@@ -127,17 +134,20 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
         {workflow === "offset" ? (
           <>
             <h2>Offset</h2>
-            <p>{line.length < 2 ? "Draw a line." : marks.length < 4 ? "Mark reference zones on the profile." : "Fit."}</p>
+            <p>{line.length < 2 ? "Draw a line." : "Drag Top and Bottom."}</p>
             <label className="field">
               Order
               <input type="number" min={0} max={6} value={order} onChange={(e) => setOrder(Math.max(0, Math.round(Number(e.target.value))))} />
             </label>
-            <button className="btn-primary" disabled={!profile || !marksReady} onClick={fitOffset}>Fit</button>
-            {profileFit && (
+            {levelFit && (
               <div className="nums" style={{ marginTop: 12 }}>
-                <div><span>Offset</span>{profileFit.offset.toFixed(2)} µm</div>
-                <div><span>Min</span>{profileFit.min.toFixed(2)} µm</div>
-                <div><span>Max</span>{profileFit.max.toFixed(2)} µm</div>
+                <div><span>Offset</span>{levelFit.offset.toFixed(2)} µm</div>
+                <div><span>Top mean</span>{levelFit.top.mean.toFixed(2)} µm</div>
+                <div><span>Top min</span>{levelFit.top.min.toFixed(2)} µm</div>
+                <div><span>Top max</span>{levelFit.top.max.toFixed(2)} µm</div>
+                <div><span>Bottom mean</span>{levelFit.bottom.mean.toFixed(2)} µm</div>
+                <div><span>Bottom min</span>{levelFit.bottom.min.toFixed(2)} µm</div>
+                <div><span>Bottom max</span>{levelFit.bottom.max.toFixed(2)} µm</div>
               </div>
             )}
           </>
@@ -154,18 +164,15 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
             )}
           </>
         )}
-        {error && <div className="callout warn">{error}</div>}
+        {((workflow === "offset" && levelError) || error) && <div className="callout warn">{(workflow === "offset" && levelError) || error}</div>}
       </aside>
       {workflow === "offset" && profile && (
         <div className="plotdock">
           <ProfilePlot
             series={{ x: profile.distance, y: profile.height, xlabel: "mm", title: "Section" }}
-            zones={zones}
-            fit={profileFit?.fitted}
-            onPick={(x) => {
-              setMarks((m) => (m.length >= 4 ? [x] : [...m, x]));
-              setProfileFit(null);
-            }}
+            levels={topZone && bottomZone ? { top: topZone, bottom: bottomZone } : undefined}
+            fit={levelFit?.fitted}
+            onLevels={(top, bottom) => { setTopZone(top); setBottomZone(bottom); }}
           />
         </div>
       )}
@@ -197,20 +204,31 @@ function sampleProfile(field: Field, a: { x: number; y: number }, b: { x: number
   return { ...sampled, length: Math.hypot(b.x - a.x, b.y - a.y) };
 }
 
-function pairZones(marks: number[]): [number, number][] {
-  const zones: [number, number][] = [];
-  for (let i = 0; i + 1 < marks.length; i += 2) zones.push([marks[i], marks[i + 1]]);
-  return zones;
-}
-
-function overlaysOf(line: { x: number; y: number }[], inner: number[] | null, outer: number[] | null): Measurement[] {
+function overlaysOf(
+  line: { x: number; y: number }[],
+  inner: number[] | null,
+  outer: number[] | null,
+  levels: { top: [number, number]; bottom: [number, number]; length: number } | null,
+): Measurement[] {
   const out: Measurement[] = [];
   if (line.length === 2) {
     out.push(mark("line", { p0: [line[0].x, line[0].y], p1: [line[1].x, line[1].y] }));
+    if (levels) {
+      out.push(zoneMark("top", line, levels.top, levels.length, "#c47a4a"));
+      out.push(zoneMark("bottom", line, levels.bottom, levels.length, "#3d8bfd"));
+    }
   }
   if (inner) out.push(mark("inner", { rect: inner }));
   if (outer) out.push(mark("outer", { rect: outer }));
   return out;
+}
+
+function zoneMark(id: string, line: { x: number; y: number }[], span: [number, number], length: number, color: string): Measurement {
+  const at = (d: number) => {
+    const t = length ? Math.min(1, Math.max(0, d / length)) : 0;
+    return [line[0].x + (line[1].x - line[0].x) * t, line[0].y + (line[1].y - line[0].y) * t];
+  };
+  return mark(id, { p0: at(Math.min(span[0], span[1])), p1: at(Math.max(span[0], span[1])), color, label: id === "top" ? "Top" : "Bottom", wide: 1 });
 }
 
 function mark(id: string, geometry: Record<string, unknown>): Measurement {

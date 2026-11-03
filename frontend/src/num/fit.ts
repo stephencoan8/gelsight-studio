@@ -29,6 +29,69 @@ function basis2(u: number, v: number, terms: [number, number][]): number[] {
   return terms.map(([a, b]) => Math.pow(u, a) * Math.pow(v, b));
 }
 
+export interface ZoneStats {
+  min: number;
+  max: number;
+  mean: number;
+  n: number;
+}
+
+export interface LevelFit {
+  order: number;
+  /** Polynomial evaluated at every sample. It is fit to the top zone only. */
+  fitted: number[];
+  /** Top-zone mean minus bottom-zone mean, both measured from that polynomial. */
+  offset: number;
+  top: ZoneStats;
+  bottom: ZoneStats;
+}
+
+/** Fit `order` to the top zone and compare the bottom zone with it. */
+export function fitLevels(distance: number[], height: number[], top: [number, number], bottom: [number, number], order: number): LevelFit {
+  if (order < 0 || !Number.isInteger(order)) throw new Error("polynomial order must be a non-negative integer");
+  const topIdx = inside(distance, height, top);
+  const bottomIdx = inside(distance, height, bottom);
+  if (topIdx.length < order + 1) throw new Error("Top needs more points than the polynomial order");
+  if (!bottomIdx.length) throw new Error("Bottom has no samples");
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const i of topIdx) {
+    lo = Math.min(lo, distance[i]);
+    hi = Math.max(hi, distance[i]);
+  }
+  const span = hi - lo || 1;
+  const norm = (d: number) => (2 * (d - lo)) / span - 1;
+  const coef = lstsq(topIdx.map((i) => basis1(norm(distance[i]), order)), topIdx.map((i) => height[i]), 1e-12);
+  const fitted = distance.map((d, i) => (Number.isFinite(height[i]) ? dot(basis1(norm(d), order), coef) : NaN));
+  const topStats = statsOf(height, fitted, topIdx);
+  const bottomStats = statsOf(height, fitted, bottomIdx);
+  return { order, fitted, offset: topStats.mean - bottomStats.mean, top: topStats, bottom: bottomStats };
+}
+
+function inside(distance: number[], height: number[], zone: [number, number]): number[] {
+  const lo = Math.min(zone[0], zone[1]);
+  const hi = Math.max(zone[0], zone[1]);
+  const idx: number[] = [];
+  for (let i = 0; i < distance.length; i++) {
+    if (!Number.isFinite(height[i]) || !Number.isFinite(distance[i])) continue;
+    if (distance[i] >= lo && distance[i] <= hi) idx.push(i);
+  }
+  return idx;
+}
+
+function statsOf(height: number[], fitted: number[], idx: number[]): ZoneStats {
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  for (const i of idx) {
+    const d = height[i] - fitted[i];
+    min = Math.min(min, d);
+    max = Math.max(max, d);
+    sum += d;
+  }
+  return { min, max, mean: sum / idx.length, n: idx.length };
+}
+
 export interface ProfileFit {
   order: number;
   fitted: number[];

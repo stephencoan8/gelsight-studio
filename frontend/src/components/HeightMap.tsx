@@ -250,7 +250,11 @@ function drawMeas(
   fovW: number,
   fovH: number,
 ) {
-  o.strokeStyle = active ? "#ffd166" : "#7ec8ff";
+  const raw = m.geometry as Record<string, unknown>;
+  const tint = typeof raw.color === "string" ? raw.color : null;
+  const tag = typeof raw.label === "string" ? raw.label : null;
+  o.lineWidth = raw.wide ? 5 : 1.5;
+  o.strokeStyle = tint || (active ? "#ffd166" : "#7ec8ff");
   o.fillStyle = o.strokeStyle;
   const g = m.geometry as Record<string, number[]>;
   const line = (a: number[], b: number[]) => {
@@ -299,8 +303,11 @@ function drawMeas(
       o.stroke();
     }
   }
+  if (tag && g.p0 && g.p1) {
+    o.fillText(tag, (X(g.p0[0]) + X(g.p1[0])) / 2, (Y(g.p0[1]) + Y(g.p1[1])) / 2 - 8);
+  }
   const anchor = g.p0 || g.click || (Array.isArray(g.points) ? (g.points as unknown as number[][])[0] : g.rect);
-  if (anchor) {
+  if (!tag && anchor) {
     const ax = Array.isArray(anchor[0]) ? (anchor as unknown as number[][])[0][0] : (anchor as number[])[0];
     const ay = Array.isArray(anchor[0]) ? (anchor as unknown as number[][])[0][1] : (anchor as number[])[1];
     o.fillText(String(index), X(ax) + 6, Y(ay) - 6);
