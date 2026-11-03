@@ -1,14 +1,14 @@
-# GelSight Studio
+# Surface Measurement
 
-A browser-only app for GelSight tactile height maps. Import a scan, level it, measure grooves, steps, holes and roughness, save the setup as a recipe, and compare the result with a stylus or a Keyence map. All of that runs in the page. A scan opened from disk stays in this browser.
+A browser-only app for tactile height maps. Import a scan, level it, measure grooves, steps, holes and roughness, save the setup as a recipe, and compare the result with a stylus or a Keyence map. All of that runs in the page. A scan opened from disk stays in this browser.
 
-It is not affiliated with GelSight, Inc. No raw scan from the study is in this repository. The numerical model is the one recorded in [`reference/experiment_log.md`](reference/experiment_log.md).
+No raw scan from the study is in this repository. The numerical model is the one recorded in [`reference/experiment_log.md`](reference/experiment_log.md).
 
 ## Hosted
 
-<https://stephencoan8.github.io/gelsight-studio/>
+<https://stephencoan8.github.io/surface-measurement/>
 
-The site is a GitHub Pages build of this repo. [`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds the Vite app and deploys `frontend/dist` on every push to `main`. The Vite `base` is `/gelsight-studio/`.
+The site is a GitHub Pages build of this repo. [`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds the Vite app and deploys `frontend/dist` on every push to `main`. The Vite `base` is `/surface-measurement/`.
 
 Pages has to be turned on after the repository is public: Settings → Pages → Build and deployment → Source: GitHub Actions. Until that is enabled, the URL will not serve the app. Nothing in the workflow publishes the repository for you.
 
@@ -20,10 +20,10 @@ Node 20 or newer.
 ./run.sh dev
 ```
 
-Opens Vite at <http://127.0.0.1:5173/gelsight-studio/>.
+Opens Vite at <http://127.0.0.1:5173/surface-measurement/>.
 
 ```bash
-./run.sh          # production build, preview at http://127.0.0.1:8000/gelsight-studio/
+./run.sh          # production build, preview at http://127.0.0.1:8000/surface-measurement/
 ./run.sh test     # vitest, then the TypeScript production build
 ```
 
@@ -33,15 +33,19 @@ Docker serves the same static build:
 docker compose up --build
 ```
 
-That listens on <http://127.0.0.1:8080/gelsight-studio/>.
+That listens on <http://127.0.0.1:8080/surface-measurement/>.
 
-The first screen is empty. **Load demonstration set** builds a synthetic validation plate (tagged synthetic) so the tools can be tried without a sensor. The validation page does not use that plate. It recomputes the published comparison from the stored per-scan table.
+The first screen is the scan list. **Open** takes one scan folder, or a zip of that folder: six images, a normal map, one calibration yaml and its png, a `.tmd` height file, `scan.yaml`, and a thumbnail. The `.tmd` is the height map. If it is missing, height is reconstructed from the six images and the calibration that sits in the same folder. The ball, flat, and groove calibration set is not part of a scan.
 
-Scans, calibrations, measurements, and recipes are stored in IndexedDB. Height maps and the six raw frames, when a GelSight folder includes them, go in the origin private file system (IndexedDB if that API is missing). Closing the tab does not upload them.
+**Surface** is a top-down height map with two measurements, both from the same polynomial fit to a reference region you choose. **Offset** is a line, reference zones on the profile, and an order. **Scratch** is an inner box and an outer box; the fit is fourth order on the frame between them, and the readout is the min and max inside the inner box.
+
+**Demo** builds a synthetic plate so those two workflows can be tried without a sensor. Calibrate, validation, and the older tools stay behind **More → Advanced**.
+
+Scans, calibrations, measurements, and recipes are stored in IndexedDB. Height maps and the six raw frames, when a sensor folder includes them, go in the origin private file system (IndexedDB if that API is missing). Closing the tab does not upload them.
 
 ## The model
 
-Photometry is GelSight’s own quadratic calibration (`quadfit` in `Calib-*.yaml`), at full resolution, with no slope clamp. Height is the Neumann Poisson integral of the slopes, multiplied by
+Photometry is the sensor's own quadratic calibration (`quadfit` in `Calib-*.yaml`), at full resolution, with no slope clamp. Height is the Neumann Poisson integral of the slopes, multiplied by
 
 ```text
 K = camera millimetres per pixel / scan millimetres per pixel
@@ -58,7 +62,7 @@ The offset is depth the gel does not reach. It is applied to a reported depth. I
 | Comparison | Single-scan RMS vs stylus |
 |---|---|
 | This model, leave-one-rotation-out | **0.88 µm** |
-| GelSight native TMD, same protocol | 2.07 µm |
+| Native TMD, same protocol | 2.07 µm |
 | Keyence, 7.40 µm/px | 0.70 µm |
 
 Leave-one-groove-out is 0.64 µm. The mean of the four held-out predictions is 0.47 µm versus the stylus. AICc selects gain and offset. The repeatability floor is about 0.9 µm. These Q F1 figures are recomputed in the page from `reference/E00_GSQ_F1.json`. The native TMD row is the published summary; that per-scan table was not retained.
@@ -134,11 +138,11 @@ Plane, polynomial, and region levelling, plus Gaussian, median, and wide-Gaussia
 
 A recipe stores those steps and runs them on other scans in the same fixture frame. Reports download as PDF, CSV, and JSON. Height maps download as TIFF (float32), NPY, CSV, PNG, and a decimated STL.
 
-A GelSight folder with six images and an active sensor profile can be reconstructed in the viewer. **Preview** is factor 4. **Full res** is the published model and asks for confirmation.
+A sensor folder with six images and an active sensor profile can be reconstructed in the viewer. **Preview** is factor 4. **Full res** is the published model and asks for confirmation.
 
 ## Keyboard
 
-`1`–`0` select the tools in the order above. `[` `]` change vertical exaggeration. `M` `V` `S` switch map, 3D, and split. `I` shows the original image when a GelSight folder had one. `Enter` finishes a scratch path, `Esc` cancels it, `Delete` removes the selected result. `Ctrl+Z` undoes a measurement, `Ctrl+Shift+Z` redoes it. `T` toggles the theme. `?` opens the shortcut list. `Alt+1`…`Alt+7` switch sections. Double-click the map to fit it.
+`1`–`0` select the tools in the order above. `[` `]` change vertical exaggeration. `M` `V` `S` switch map, 3D, and split. `I` shows the original image when a sensor folder had one. `Enter` finishes a scratch path, `Esc` cancels it, `Delete` removes the selected result. `Ctrl+Z` undoes a measurement, `Ctrl+Shift+Z` redoes it. `T` toggles the theme. `?` opens the shortcut list. `Alt+1`…`Alt+7` switch sections. Double-click the map to fit it.
 
 ## Tests
 
@@ -151,20 +155,20 @@ A GelSight folder with six images and an active sensor profile can be reconstruc
 - 16-bit decode of the reference flat field (1848×1028, samples 9578…31883, not an 8-bit truncation) and the quadfit block (360 values, gel 5BA5-R9MX).
 - Cap mask, sphere scale, roughness of a sine, NPY and float TIFF round-trip, TMD header, phase correlation.
 
-The Python package under `gelsight/` is a reference for the same model. `pytest` still runs it. The app does not start that server.
+The Python package under `tactile/` is a reference for the same model. `pytest` still runs it. The app does not start that server.
 
 ## File formats
 
-- GelSight folder: `scan.yaml`, `image01`–`image06`, and an optional `.tmd` height in millimetres. The reference profile (gel 5BA5-R9MX, camera CIMAF2440014) is loaded from the files shipped in `frontend/public/reference/`. Its flat field is decoded as 16-bit.
+- Tactile sensor scan folder (`.tmd`/`.yaml`): `scan.yaml`, `image01`–`image06`, and an optional `.tmd` height in millimetres. The reference profile (gel 5BA5-R9MX, camera CIMAF2440014) is loaded from the files shipped in `frontend/public/reference/`. Its flat field is decoded as 16-bit.
 - Keyence `.zag`: a zip containing 1024×768 little-endian int32 height maps. Invalid sentinels become NaN. Pixel size is `MeterPerPixel`. The 23.68 µm/px overview is not the 0.70 µm groove number.
-- TIFF (uncompressed 8/16-bit or float32), PNG (8- or 16-bit, decoded without canvas), CSV, NPY, and GelSight TMD. You set millimetres per pixel and the file’s height unit when the file does not carry them.
+- TIFF (uncompressed 8/16-bit or float32), PNG (8- or 16-bit, decoded without canvas), CSV, NPY, and a tactile height map (`.tmd`). You set millimetres per pixel and the file’s height unit when the file does not carry them.
 
 ## Gaps
 
 - Scan055–058 and the ball, flat, and groove calibration captures are not in this repository. The 0.88 µm figure is the transfer applied to the stored groove depths, not a fresh reconstruction of those images. Full-resolution reconstruction of a 5-megapixel capture is implemented. On this machine the normal-solve rate implies about 26 s plus the 1.5 s integral. That full grid was not timed end to end, because the images are not here.
 - Poisson across workers was slower than one WASM instance on 4 cores, so the integrator does not use the pool. Shared memory would avoid the copies, and GitHub Pages will not send the required headers.
 - Compressed TIFF is rejected with an error that asks for uncompressed float32 or CSV. Interlaced PNG is rejected the same way.
-- On holes, the study’s Poisson integration was worse than GelSight’s native height (loc25 about 127 µm versus 49 µm against Keyence). The diameter rule is the same.
-- There is no live connection to a sensor. Import is from files GelSight Mobile or Scan already wrote.
+- On holes, the study’s Poisson integration was worse than the sensor's native height (loc25 about 127 µm versus 49 µm against Keyence). The diameter rule is the same.
+- There is no live connection to a sensor. Import is from files the sensor software already wrote.
 - Undo covers measurements created in the open session.
 - The Python FastAPI app is no longer what `./run.sh` starts. It remains in the tree as the numerical reference.

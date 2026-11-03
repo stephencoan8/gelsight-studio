@@ -1,4 +1,4 @@
-/** Height-map readers and writers: NPY, TIFF, CSV, GelSight TMD, Keyence .zag. */
+/** Height-map readers and writers: NPY, TIFF, CSV, sensor TMD, Keyence .zag. */
 
 import { unzipSync } from "fflate";
 import { decodePng } from "./png";
@@ -34,7 +34,7 @@ export function readNpy(bytes: Uint8Array): { z: Float64Array; rows: number; col
   const n = rows * cols;
   const z = new Float64Array(n);
   const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const le = descr.startsWith("<") || descr.startsWith("|");
+  const le = descr.startsWith("<") || descr.startsWith("|") || descr.startsWith("=");
   if (descr.includes("f4") || descr.includes("f8")) {
     const wide = descr.includes("f8");
     for (let i = 0; i < n; i++) z[i] = wide ? dv.getFloat64(i * 8, le) : dv.getFloat32(i * 4, le);
@@ -46,6 +46,10 @@ export function readNpy(bytes: Uint8Array): { z: Float64Array; rows: number; col
       else z[i] = data[i];
     }
   } else throw new Error(`npy dtype ${descr} is not supported`);
+  if (/'fortran_order':\s*True/.test(header) && dims.length >= 2) {
+    const src = z.slice();
+    for (let k = 0; k < n; k++) z[(k % rows) * cols + Math.floor(k / rows)] = src[k];
+  }
   return { z, rows, cols };
 }
 
@@ -128,35 +132,67 @@ export function writeTiff(z: Float32Array, rows: number, cols: number, mmpp: num
   return out;
 }
 
+type TiffTag = { type: number; count: number; value: number };
+
+function tiffLongs(v: DataView, tag: TiffTag | undefined, le: boolean): number[] {
+  if (!tag || !tag.count) return [];
+  const size = tag.type === 3 ? 2 : 4;
+  const inline = tag.count * size <= 4;
+  const out: number[] = [];
+  for (let i = 0; i < tag.count; i++) {
+    if (inline && tag.type === 3) {
+      const part = le ? (i === 0 ? tag.value & 0xffff : (tag.value >>> 16) & 0xffff) : (i === 0 ? (tag.value >>> 16) & 0xffff : tag.value & 0xffff);
+      out.push(part);
+    } else if (inline) out.push(tag.value >>> 0);
+    else if (tag.type === 3) out.push(v.getUint16(tag.value + i * 2, le));
+    else out.push(v.getUint32(tag.value + i * 4, le));
+  }
+  return out;
+}
+
 export function readTiff(bytes: Uint8Array): { z: Float64Array; rows: number; cols: number } {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const le = bytes[0] === 0x49;
-  if (v.getUint16(2, le) !== 42) throw new Error("not a TIFF");
-  let ifd = v.getUint32(4, le);
+  if ((bytes[0] !== 0x49 && bytes[0] !== 0x4d) || v.getUint16(2, le) !== 42) throw new Error("not a TIFF");
+  const ifd = v.getUint32(4, le);
   const n = v.getUint16(ifd, le);
-  const tags = new Map<number, { type: number; count: number; value: number }>();
+  const tags = new Map<number, TiffTag>();
   for (let i = 0; i < n; i++) {
     const o = ifd + 2 + i * 12;
     tags.set(v.getUint16(o, le), { type: v.getUint16(o + 2, le), count: v.getUint32(o + 4, le), value: v.getUint32(o + 8, le) });
   }
-  const cols = tags.get(256)?.value ?? 0;
-  const rows = tags.get(257)?.value ?? 0;
-  const comp = tags.get(259)?.value ?? 1;
+  if (tags.has(322) || tags.has(323)) throw new Error("tiled TIFF is not supported; export uncompressed strips");
+  const cols = tiffLongs(v, tags.get(256), le)[0] ?? 0;
+  const rows = tiffLongs(v, tags.get(257), le)[0] ?? 0;
+  const comp = tiffLongs(v, tags.get(259), le)[0] ?? 1;
   if (comp !== 1) throw new Error("compressed TIFF is not supported; export uncompressed float32 or CSV");
+  const planar = tiffLongs(v, tags.get(284), le)[0] ?? 1;
+  if (planar !== 1) throw new Error("separate-plane TIFF is not supported");
   const bitsTag = tags.get(258);
-  const bits = bitsTag && bitsTag.count === 1 ? bitsTag.value & 0xffff : bitsTag ? v.getUint16(bitsTag.value, le) : 8;
-  const format = tags.get(339)?.value ?? (bits === 32 ? 3 : 1);
-  const offset = tags.get(273)?.value ?? 0;
-  const samples = tags.get(277)?.value ?? 1;
-  const nPix = rows * cols;
-  const z = new Float64Array(nPix);
-  if (bits === 32 && (format === 3 || format === 1)) {
-    for (let i = 0; i < nPix; i++) z[i] = v.getFloat32(offset + i * 4 * samples, le);
-  } else if (bits === 16) {
-    for (let i = 0; i < nPix; i++) z[i] = v.getUint16(offset + i * 2 * samples, le);
-  } else if (bits === 8) {
-    for (let i = 0; i < nPix; i++) z[i] = bytes[offset + i * samples];
-  } else throw new Error(`TIFF ${bits}-bit samples are not supported`);
+  const bits = bitsTag && bitsTag.count === 1 ? (le ? bitsTag.value & 0xffff : bitsTag.value >>> 16) : bitsTag ? v.getUint16(bitsTag.value, le) : 8;
+  const format = tiffLongs(v, tags.get(339), le)[0] ?? (bits === 32 ? 3 : 1);
+  const samples = tiffLongs(v, tags.get(277), le)[0] ?? 1;
+  const offsets = tiffLongs(v, tags.get(273), le);
+  const rowsPer = tiffLongs(v, tags.get(278), le)[0] || rows;
+  if (!cols || !rows || !offsets.length) throw new Error("TIFF is missing image size or strip offsets");
+  const z = new Float64Array(rows * cols);
+  const bpp = (bits / 8) * samples;
+  let row0 = 0;
+  for (const off of offsets) {
+    const nrows = Math.min(rowsPer, rows - row0);
+    for (let r = 0; r < nrows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const p = off + (r * cols + c) * bpp;
+        const i = (row0 + r) * cols + c;
+        if (bits === 32 && (format === 3 || format === 1)) z[i] = v.getFloat32(p, le);
+        else if (bits === 16 && format === 2) z[i] = v.getInt16(p, le);
+        else if (bits === 16) z[i] = v.getUint16(p, le);
+        else if (bits === 8) z[i] = bytes[p];
+        else throw new Error(`TIFF ${bits}-bit samples are not supported`);
+      }
+    }
+    row0 += nrows;
+  }
   return { z, rows, cols };
 }
 
@@ -236,7 +272,7 @@ export function writeStl(z: Float32Array, rows: number, cols: number, mmpp: numb
   for (let i = 0; i < h.length; i++) if (!Number.isFinite(h[i])) h[i] = fill;
   const ntri = r * c * 2;
   const out = new Uint8Array(84 + ntri * 50);
-  const enc = new TextEncoder().encode("GelSight Studio height");
+  const enc = new TextEncoder().encode("Surface Measurement height");
   out.set(enc, 0);
   const v = new DataView(out.buffer);
   v.setUint32(80, ntri, true);

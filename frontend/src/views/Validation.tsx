@@ -41,39 +41,36 @@ export function Validation() {
   return (
     <div className="page">
       <h1>Validation</h1>
-      <p className="lede">
-        Scan055–058, assumed at 0/90/180/270°. The Q F1 numbers are recomputed in this app from the stored per-scan table. The native TMD row is the published leave-one-out summary; the per-scan TMD table was not retained. Raw captures are not in this repository.
-      </p>
       <div className="tiles">
         <div className="tile good">
-          <div className="k">This model, one scan</div>
+          <div className="k">This model</div>
           <div className="v">{q.loro_mean_sty.toFixed(2)}<small>µm</small></div>
-          <div className="s">Leave-one-rotation-out vs stylus</div>
+          <div className="s">vs stylus</div>
         </div>
         <div className="tile">
-          <div className="k">GelSight native TMD</div>
+          <div className="k">Native TMD</div>
           <div className="v">{data.native.id_loro_mean_sty.toFixed(2)}<small>µm</small></div>
-          <div className="s">Same protocol, no extra transfer</div>
+          <div className="s">vs stylus</div>
         </div>
         <div className="tile">
-          <div className="k">Keyence, high mag</div>
+          <div className="k">Keyence</div>
           <div className="v">{data.keyence.rms_sty.toFixed(2)}<small>µm</small></div>
-          <div className="s">7.40 µm/px versus stylus</div>
+          <div className="s">vs stylus</div>
         </div>
         <div className="tile">
-          <div className="k">Repeatability floor</div>
+          <div className="k">Floor</div>
           <div className="v">{data.floor_um.toFixed(1)}<small>µm</small></div>
-          <div className="s">Per-scan scatter, not bias</div>
         </div>
       </div>
-      <div className="panel">
-        <div className="formula">{data.model.formula}</div>
+      <details className="fold">
+        <summary>Plate fit · {data.model.formula}</summary>
         <p>{data.model.note}</p>
         <p>
-          Before the correction the same reconstruction is {um(q.raw_rms_sty)} RMS. After it, the mean of the four held-out predictions is {um(q.mean4_sty)} versus stylus and {um(q.mean4_key)} versus Keyence. Leave-one-groove-out is {um(q.logo_sty)}. AICc is {num(q.aicc, 1)} and selects {q.selected_model}. Folds: {q.loro_sty.map((v) => v.toFixed(2)).join(" · ")} µm.
+          Raw {um(q.raw_rms_sty)}. Mean of four {um(q.mean4_sty)} vs stylus, {um(q.mean4_key)} vs Keyence. Leave-one-groove-out {um(q.logo_sty)}. AICc {num(q.aicc, 1)} selects {q.selected_model}. Folds {q.loro_sty.map((v) => v.toFixed(2)).join(" · ")} µm.
         </p>
-        <p style={{ color: "var(--muted)" }}>{data.keyence.note} {data.native.note}</p>
-      </div>
+      </details>
+      <details className="fold">
+        <summary>Groove table</summary>
       <table className="table">
         <thead>
           <tr>
@@ -98,9 +95,9 @@ export function Validation() {
           ))}
         </tbody>
       </table>
-      <p style={{ color: "var(--faint)", fontSize: 12 }}>Corrected mean is the in-sample affine applied to the four-scan mean. The headline accuracy is the leave-one-out number above, not this column.</p>
-
-      <h2>Model comparison</h2>
+      </details>
+      <details className="fold">
+        <summary>Models</summary>
       <table className="table">
         <thead><tr><th>Transfer</th><th className="num">k</th><th className="num">LORO µm</th><th className="num">LOGO µm</th><th className="num">AICc</th></tr></thead>
         <tbody>
@@ -115,8 +112,9 @@ export function Validation() {
           ))}
         </tbody>
       </table>
-
-      <h2>Holes</h2>
+      </details>
+      <details className="fold">
+        <summary>Holes</summary>
       <div className="callout warn">
         A fixed threshold 3 or 10 µm below the global land follows the gel sag ({data.holes.sag_um}) and overestimates the diameter. The diameter reported by the hole tool is {data.holes.rule}: 25 µm below the local land in the annulus 1.15–1.5 R. In-hole depth is the gel surface. The gel cannot reach a 0.3–0.6 mm hole bottom, so that depth is not a measurement of the hole.
       </div>
@@ -139,6 +137,7 @@ export function Validation() {
       </table>
       <p>{String(data.holes.published_qf1_um.note || "")}</p>
       <p style={{ color: "var(--muted)" }}>Native leave-one-out on the hole table chose loc25 every fold, with test RMS {String((data.holes.published_native_um.loro_loc25_vs_table as number[]).join(" / "))} µm.</p>
+      </details>
     </div>
   );
 }

@@ -168,6 +168,28 @@ describe("cap, roughness, files", () => {
     expect(tif.z[4]).toBeCloseTo(5);
   });
 
+  it("unscrambles fortran-order npy and reads every TIFF strip", () => {
+    let header = "{'descr': '<f4', 'fortran_order': True, 'shape': (2, 3), }";
+    const pad = (10 + header.length + 1) % 64;
+    header += " ".repeat((64 - pad) % 64) + "\n";
+    const h = new TextEncoder().encode(header);
+    const payload = new Float32Array([1, 4, 2, 5, 3, 6]);
+    const npy = new Uint8Array(10 + h.length + payload.byteLength);
+    npy.set([0x93, 0x4e, 0x55, 0x4d, 0x50, 0x59, 1, 0], 0);
+    new DataView(npy.buffer).setUint16(8, h.length, true);
+    npy.set(h, 10);
+    npy.set(new Uint8Array(payload.buffer), 10 + h.length);
+    const back = readNpy(npy);
+    expect(Array.from(back.z)).toEqual([1, 2, 3, 4, 5, 6]);
+
+    const strips = [[1.5, 2.5, 3.5], [4.5, 5.5, 6.5]];
+    const tif = floatStrips(strips);
+    const got = readTiff(tif);
+    expect(got.rows).toBe(2);
+    expect(got.cols).toBe(3);
+    expect(Array.from(got.z)).toEqual([1.5, 2.5, 3.5, 4.5, 5.5, 6.5]);
+  });
+
   it("reads a TMD header", () => {
     const rows = 2;
     const cols = 3;
@@ -189,6 +211,51 @@ describe("cap, roughness, files", () => {
     expect(tmd.comment).toBe("demo");
   });
 });
+
+function floatStrips(grid: number[][]): Uint8Array {
+  const height = grid.length;
+  const width = grid[0].length;
+  const nTags = 10;
+  const ifd = 8;
+  const ifdSize = 2 + nTags * 12 + 4;
+  const offTable = ifd + ifdSize;
+  const cntTable = offTable + height * 4;
+  let cursor = cntTable + height * 4;
+  const out = new Uint8Array(cursor + height * width * 4);
+  const v = new DataView(out.buffer);
+  out[0] = 0x49;
+  out[1] = 0x49;
+  v.setUint16(2, 42, true);
+  v.setUint32(4, ifd, true);
+  v.setUint16(ifd, nTags, true);
+  const tags: [number, number, number, number][] = [
+    [256, 4, 1, width],
+    [257, 4, 1, height],
+    [258, 3, 1, 32],
+    [259, 3, 1, 1],
+    [273, 4, height, offTable],
+    [277, 3, 1, 1],
+    [278, 4, 1, 1],
+    [279, 4, height, cntTable],
+    [284, 3, 1, 1],
+    [339, 3, 1, 3],
+  ];
+  for (let i = 0; i < nTags; i++) {
+    const o = ifd + 2 + i * 12;
+    v.setUint16(o, tags[i][0], true);
+    v.setUint16(o + 2, tags[i][1], true);
+    v.setUint32(o + 4, tags[i][2], true);
+    if (tags[i][1] === 3) v.setUint16(o + 8, tags[i][3], true);
+    else v.setUint32(o + 8, tags[i][3], true);
+  }
+  grid.forEach((row, s) => {
+    v.setUint32(offTable + s * 4, cursor, true);
+    v.setUint32(cntTable + s * 4, width * 4, true);
+    row.forEach((value, c) => v.setFloat32(cursor + c * 4, value, true));
+    cursor += width * 4;
+  });
+  return out;
+}
 
 describe("photometric fit", () => {
   it("predicts the intensities it was shown", () => {

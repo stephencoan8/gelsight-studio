@@ -4,11 +4,11 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-from gelsight.integrate import frankot_chellappa, poisson_dct
-from gelsight.photometric import GelSightCalib, load_flatfield, normals_from_calib, solve_normals
-from gelsight.readers import TMD, read_height_array, read_keyence_zag, read_tmd, write_stl, write_tiff, write_tmd
-from gelsight.register import phase_correlation
 from PIL import Image
+from tactile.integrate import frankot_chellappa, poisson_dct
+from tactile.photometric import SensorCalib, load_flatfield, normals_from_calib, solve_normals
+from tactile.readers import TMD, read_height_array, read_keyence_zag, read_tmd, write_stl, write_tiff, write_tmd
+from tactile.register import phase_correlation
 
 ROOT = Path(__file__).resolve().parents[1]
 CALIB = ROOT / "reference" / "calib" / "Calib-5BA5-R9MX_20261102_1136.yaml"
@@ -53,7 +53,7 @@ def test_solve_normals_inverts_a_linear_model():
     # phi indices 6, 7, 8 are nx, ny, nz. Constant monomial is last (index 5).
     quad = np.zeros((6, 6, 10))
     quad[5, :, 6:9] = lights
-    from gelsight.photometric import phi
+    from tactile.photometric import phi
 
     yt = phi(true) @ quad[5].T  # (6,)
     yt = np.repeat(yt[None, :], 12, axis=0)
@@ -74,7 +74,7 @@ def test_normals_from_calib_roundtrip_on_a_tiny_image():
     quad[5, :, 6:9] = lights
     true = np.array([0.1, -0.05, 1.0])
     true /= np.linalg.norm(true)
-    from gelsight.photometric import phi
+    from tactile.photometric import phi
 
     y = phi(true) @ quad[5].T
     # Invert y = (I / F) ** gamma * scale, with F = 1 and scale = 1.
@@ -87,7 +87,7 @@ def test_normals_from_calib_roundtrip_on_a_tiny_image():
 
 
 def test_reference_calibration_yaml_and_flatfield():
-    cal = GelSightCalib(CALIB)
+    cal = SensorCalib(CALIB)
     assert cal.quad.shape == (6, 6, 10)
     assert cal.gel_id == "5BA5-R9MX"
     assert cal.camera_serial == "CIMAF2440014"
@@ -159,7 +159,7 @@ def test_stl_and_phase_correlation(tmp_path: Path):
     assert abs(dy - 3) < 0.35
     assert abs(dx - (-2)) < 0.35
     assert peak > 0
-    from gelsight.register import align_and_diff
+    from tactile.register import align_and_diff
 
     aligned = align_and_diff(z, shifted, 1.0, 1.0, register=True)
     assert abs(aligned["dy_px"] - 3) < 0.35

@@ -1,6 +1,6 @@
-"""Scan readers: GelSight folders and TMD, Keyence .zag, and plain height maps.
+"""Scan readers: sensor folders and TMD, Keyence .zag, and plain height maps.
 
-GelSight TMD follows gsmatlab ``readtmd.m``: 32-byte header, a NUL-terminated
+sensor TMD follows gsmatlab ``readtmd.m``: 32-byte header, a NUL-terminated
 comment, then cols, rows, lengths and offsets in millimetres, then float32
 heights in millimetres, row-major.
 
@@ -72,7 +72,7 @@ def write_tmd(path: str | Path, tmd: TMD) -> None:
 
 
 def read_nrm(path: str | Path) -> np.ndarray:
-    """``normal = 2 * im2double(png) - 1``, as in GelSight ``readnrm.m``."""
+    """``normal = 2 * im2double(png) - 1``, as in sensor ``readnrm.m``."""
     a = np.asarray(Image.open(path))
     mx = 65535.0 if a.dtype == np.uint16 else 255.0
     return 2 * a.astype(np.float64) / mx - 1
@@ -293,7 +293,8 @@ def write_stl(path: str | Path, z_mm: np.ndarray, mmpp: float, decimate: int = 4
             tris.append((a, c, b))
             tris.append((b, c, d))
     with open(path, "wb") as f:
-        f.write(b"GelSight Studio height" + b"\0" * (80 - 22))
+        header = b"Surface Measurement"
+        f.write(header + b"\0" * (80 - len(header)))
         f.write(struct.pack("<I", len(tris)))
         for a, b, c in tris:
             n = _normal(a, b, c)

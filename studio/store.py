@@ -16,20 +16,20 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-from gelsight.benchmarks import qf1_per_scan, validation_report
-from gelsight.colorize import colorize, thumbnail
-from gelsight.constants import KEYENCE_UM, STYLUS_UM
-from gelsight.photometric import GelSightCalib
-from gelsight.readers import (
+from PIL import Image
+from tactile.benchmarks import qf1_per_scan, validation_report
+from tactile.colorize import colorize, thumbnail
+from tactile.constants import KEYENCE_UM, STYLUS_UM
+from tactile.photometric import SensorCalib
+from tactile.readers import (
     find_scan_yaml,
     read_height_array,
     read_keyence_zag,
     read_scan,
     safe_extract,
 )
-from gelsight.reconstruct import reconstruct
-from gelsight.transfer import evaluate_transfer
-from PIL import Image
+from tactile.reconstruct import reconstruct
+from tactile.transfer import evaluate_transfer
 
 ROOT = Path(__file__).resolve().parents[1]
 REF_CALIB = ROOT / "reference" / "calib" / "Calib-5BA5-R9MX_20261102_1136.yaml"
@@ -327,7 +327,7 @@ class Store:
     def _import_tree(self, folder: Path, mmpp, z_unit, tags) -> list[dict]:
         yaml_path = find_scan_yaml(folder)
         if yaml_path is not None:
-            return [self._import_gelsight(yaml_path, tags)]
+            return [self._import_sensor(yaml_path, tags)]
         zags = list(folder.rglob("*.zag"))
         if zags:
             out = []
@@ -340,7 +340,7 @@ class Store:
                 out.append(self._import_one_height(path, mmpp, z_unit, tags))
         return out
 
-    def _import_gelsight(self, yaml_path: Path, tags: list[str]) -> dict:
+    def _import_sensor(self, yaml_path: Path, tags: list[str]) -> dict:
         doc = read_scan(yaml_path)
         images = [Path(p) for p in doc.get("image_paths") or [] if Path(p).exists()]
         photo = None
@@ -364,8 +364,8 @@ class Store:
             yaml_path.parent.name,
             height,
             mmpp,
-            source="gelsight",
-            tags=list(dict.fromkeys([*tags, "gelsight"] + (["needs-reconstruction"] if needs else []))),
+            source="sensor",
+            tags=list(dict.fromkeys([*tags, "sensor"] + (["needs-reconstruction"] if needs else []))),
             notes=notes,
             meta={
                 "guid": doc.get("guid"),
@@ -387,7 +387,7 @@ class Store:
 
     def _import_one_height(self, path: Path, mmpp, z_unit, tags) -> dict:
         if path.suffix.lower() == ".tmd":
-            from gelsight.readers import read_tmd
+            from tactile.readers import read_tmd
 
             tmd = read_tmd(path)
             return self.add_height(path.stem, tmd.height, tmd.mmpp, "tmd", tags, notes=tmd.comment)
@@ -500,14 +500,14 @@ class Store:
         return self.get_calibration(cid)
 
     def adopt_yaml(self, cid: str, yaml_path: Path) -> dict:
-        cal = GelSightCalib(yaml_path)
+        cal = SensorCalib(yaml_path)
         folder = self.calibs / cid
         np.save(folder / "quad.npy", cal.quad)
         np.save(folder / "scale.npy", cal.scale)
         if cal.flat_tiles is not None:
             np.save(folder / "flatfield.npy", cal.flat_tiles)
         photo = {
-            "model": "gelsight-quadfit",
+            "model": "quadfit",
             "file": cal.path.name,
             "gel_id": cal.gel_id,
             "camera_serial": cal.camera_serial,
@@ -516,7 +516,7 @@ class Store:
             "groove_width_mm": cal.groove_width_mm,
             "has_flatfield": cal.flat_tiles is not None,
             "gamma": 0.7,
-            "note": "GelSight's own coefficients. This is the photometric model the stylus comparison used, at full resolution.",
+            "note": "the sensor's own coefficients. This is the photometric model the stylus comparison used, at full resolution.",
         }
         fields = {
             "photometric": photo,
@@ -560,7 +560,7 @@ class Store:
         return self._update_cal(cid, plate=plate, version=int(current["version"]) + 1)
 
     def load_reference_profile(self) -> dict:
-        """The 5BA5-R9MX profile: GelSight coefficients plus the published plate fit."""
+        """The 5BA5-R9MX profile: sensor coefficients plus the published plate fit."""
         existing = self.db.execute("SELECT id FROM calibrations WHERE name=?", ("5BA5-R9MX reference",)).fetchone()
         if existing:
             self.set_setting("active_calibration", existing["id"])
@@ -573,7 +573,7 @@ class Store:
                 "gel_id": "5BA5-R9MX",
                 "mmpp": 0.0068283057708,
                 "k_scale": 0.0069 / 0.0068283057708,
-                "notes": "GelSight quadfit at full resolution, then t = 1.00485·m + 1.289 µm. See the validation page.",
+                "notes": "sensor quadfit at full resolution, then t = 1.00485·m + 1.289 µm. See the validation page.",
             }
         )
         self.adopt_yaml(cal["id"], REF_CALIB)
@@ -582,7 +582,7 @@ class Store:
         self._update_cal(
             cal["id"],
             notes=(
-                "Published profile. Photometry is GelSight's quadfit. "
+                "Published profile. Photometry is the sensor's quadfit. "
                 f"Plate transfer {report['model']['formula']} was fit on Scan055–058 (Q, full resolution). "
                 "Single-scan leave-one-rotation-out versus stylus is 0.88 µm."
             ),
@@ -702,7 +702,7 @@ class Store:
         return {"id": row["id"], "name": row["name"], "steps": json.loads(row["steps"] or "[]"), "created": row["created"]}
 
     def seed_demo(self) -> dict:
-        from gelsight.demo import reference_scans
+        from tactile.demo import reference_scans
 
         if self.list_scans(tag="synthetic"):
             cal = self.load_reference_profile()

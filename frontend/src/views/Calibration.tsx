@@ -60,9 +60,6 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
   return (
     <div className="page">
       <h1>Calibration</h1>
-      <p className="lede">
-        One profile is one camera body and one gel. The reconstruction that matched the stylus uses GelSight’s own quadratic coefficients at full resolution, then a gain and an offset fit on the validation plate. A refit from the balls is available as a check. It is not the default model.
-      </p>
       <div className="steps">
         {STEPS.map((s, i) => (
           <button key={s} className={i === step ? "on" : ""} onClick={() => setStep(i)}>
@@ -74,8 +71,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
 
       {step === 0 && (
         <div className="panel">
-          <h2>Create a sensor profile</h2>
-          <p>Pixel size is the calibrated millimetres per pixel at the gel. K is camera mm-per-pixel divided by the scan mm-per-pixel. Saving a later fit writes a new version and leaves this one in the list.</p>
+          <h2>Sensor</h2>
           <div className="row">
             <label className="field">Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
             <label className="field">Camera serial<input value={form.camera_serial} onChange={(e) => setForm({ ...form, camera_serial: e.target.value })} placeholder="CIMAF…" /></label>
@@ -99,18 +95,13 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
               Load the 5BA5-R9MX reference profile
             </button>
           </div>
-          <div className="callout">
-            The reference profile is gel 5BA5-R9MX, camera CIMAF2440014. Its plate equation was fit on Scan055–058 and is the one in the experiment log: t = 1.00485·m + 1.289 µm.
-          </div>
         </div>
       )}
 
       {step === 1 && (
         <div className="panel">
-          <h2>GelSight photometric model</h2>
-          <p>
-            Import the <span className="mono">Calib-*.yaml</span> written by GelSight Mobile. The quadfit block is the model. Add the flat-field PNG only if you will reconstruct from the six raw images. Full resolution (no downsampling) is what the 0.88 µm figure refers to; a coarser reconstruction is a preview.
-          </p>
+          <h2>Photometry</h2>
+          <p>Calib yaml, optional flat-field PNG.</p>
           {!cal && <p>Create a profile on the previous step first.</p>}
           {cal && (
             <label className="btn">
@@ -150,10 +141,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
 
       {step === 2 && (
         <div className="panel">
-          <h2>Reference balls are inset</h2>
-          <p>
-            Only the top cap is a sphere. The fit keeps pixels inside the contact radius minus 0.05 R, and drops a ball whose contact is below 0.5 R. The rim, where the ball meets the plate, is not used. This check rebuilds a sphere of a known scale and recovers that scale. It does not replace GelSight’s coefficients.
-          </p>
+          <h2>Ball cap</h2>
           <button
             className="btn-primary"
             onClick={async () => setCap(await capCheck({ true_scale: 1, contact_over_r: 0.7 }))}
@@ -173,10 +161,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
 
       {step === 3 && (
         <div className="panel">
-          <h2>Validation plate</h2>
-          <p>
-            Four rotations, one scan each. Enter the stylus depths, shallow to deep. The default row is the Dektak table from the study. You can fit that published per-scan table, or measure grooves on scans in the library (polynomial bow removal, then the same left/right reference regions).
-          </p>
+          <h2>Plate</h2>
           <div className="row">
             {truth.map((v, i) => (
               <label key={i} className="field">
@@ -255,8 +240,10 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
           {plate.gain ? (
             <>
               <p className="formula">t = {num(plate.gain as number, 5)} · m + {num(plate.offset_um as number, 3)} µm</p>
+              <details className="fold">
+                <summary>Accuracy · {um(plate.loro_mean_sty as number)} LORO</summary>
               <p>
-                Leave-one-rotation-out single-scan RMS versus stylus {um(plate.loro_mean_sty as number)}. Mean-of-four {um(plate.mean4_sty as number)}. Leave-one-groove-out {um(plate.logo_sty as number)}. AICc selected <b>{String(plate.selected_by_aicc)}</b>.
+                Mean-of-four {um(plate.mean4_sty as number)}. Leave-one-groove-out {um(plate.logo_sty as number)}. AICc selected {String(plate.selected_by_aicc)}.
               </p>
               <table className="table">
                 <thead>
@@ -275,9 +262,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
                 </tbody>
               </table>
               <Residual resid={(plate.residuals_um as number[]) || []} />
-              <p style={{ color: "var(--muted)" }}>
-                The offset is depth the gel does not reach. It is added to a reported concave depth. It is not a piston on the height map. In-sample residuals are smaller than the leave-one-out figure; quote the leave-one-out number.
-              </p>
+              </details>
               <button className="btn-primary" onClick={async () => { await setActiveCalibration(cal.id); onActive(); }}>
                 Use this profile
               </button>
@@ -288,7 +273,8 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
         </div>
       )}
 
-      <h2>Saved profiles</h2>
+      <details className="fold">
+        <summary>Saved profiles</summary>
       <table className="table">
         <thead><tr><th>Name</th><th>Gel</th><th>Version</th><th className="num">Gain</th><th className="num">Offset µm</th><th></th></tr></thead>
         <tbody>
@@ -304,6 +290,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
           ))}
         </tbody>
       </table>
+      </details>
     </div>
   );
 }

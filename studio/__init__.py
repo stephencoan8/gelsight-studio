@@ -1,1 +1,1 @@
-"""Persistence and HTTP service for GelSight Studio."""
+"""Persistence and HTTP service for Surface Measurement."""

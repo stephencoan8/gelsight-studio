@@ -27,11 +27,11 @@ HOLE_TABLE = {
     5: (15.440, 10.237, 1.716),
 }
 
-# GelSight calibration groove plate (Calib-5BA5 result.groovedepth), millimetres.
+# sensor calibration groove plate (Calib-5BA5 result.groovedepth), millimetres.
 GROOVE_PLATE_DEPTH_MM = 0.4753168167134074
 GROOVE_PLATE_WIDTH_MM = 2.428
 
-# Spatial monomial used by GelSight's quadfit (full-resolution pixel coordinates).
+# Spatial monomial used by the sensor's quadfit (full-resolution pixel coordinates).
 # m = [u^2, u v, v^2, u, v, 1], u = (x - CX) * AX, v = (y - CY) * AY.
 AX = 4.31994301e-04
 AY = 4.36975362e-04

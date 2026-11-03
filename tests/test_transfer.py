@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 import numpy as np
-from gelsight.benchmarks import keyence_rms_um, qf1_per_scan, validation_report
-from gelsight.constants import KEYENCE_UM, PUBLISHED_PLATE_GAIN, PUBLISHED_PLATE_OFFSET_UM, STYLUS_UM
-from gelsight.transfer import apply_transfer, evaluate_transfer, fit_transfer
+from tactile.benchmarks import keyence_rms_um, qf1_per_scan, validation_report
+from tactile.constants import KEYENCE_UM, PUBLISHED_PLATE_GAIN, PUBLISHED_PLATE_OFFSET_UM, STYLUS_UM
+from tactile.transfer import apply_transfer, evaluate_transfer, fit_transfer
 
 REF = Path(__file__).resolve().parents[1] / "reference"
 
@@ -54,7 +54,7 @@ def test_keyence_and_native_baselines():
     report = validation_report()
     assert round(keyence_rms_um(), 2) == 0.70
     assert round(report["keyence"]["rms_sty"], 2) == 0.70
-    # GelSight native TMD, single-scan LORO, as published: 2.07 µm.
+    # sensor native TMD, single-scan LORO, as published: 2.07 µm.
     assert round(report["native"]["id_loro_mean_sty"], 2) == 2.07
     sd = qf1_per_scan().std(0, ddof=1)
     np.testing.assert_allclose(sd, [0.88, 0.27, 0.38, 0.59, 0.65, 1.28], atol=0.02)

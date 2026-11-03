@@ -119,7 +119,7 @@ def _header(c, width, height, scan) -> None:
     c.rect(0, height - 16 * mm, width, 16 * mm, fill=1, stroke=0)
     c.setFillColorRGB(1, 1, 1)
     c.setFont("Times-Bold", 12)
-    c.drawString(16 * mm, height - 10 * mm, "GelSight Studio")
+    c.drawString(16 * mm, height - 10 * mm, "Surface Measurement")
     c.setFont("Times-Roman", 9)
     c.drawRightString(width - 16 * mm, height - 10 * mm, scan.get("name", ""))
 

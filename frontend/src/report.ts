@@ -52,7 +52,7 @@ function linesOf(m: Measurement): string[] {
 
 export function buildPdf(scan: Scan, measurements: Measurement[]): Uint8Array {
   const text = [
-    "GelSight Studio",
+    "Surface Measurement",
     scan.name,
     `${scan.source}   ${scan.width} x ${scan.height}   ${scan.mmpp} mm/px`,
     scan.notes || "",
@@ -61,7 +61,7 @@ export function buildPdf(scan: Scan, measurements: Measurement[]): Uint8Array {
   ].filter((line, i, all) => line.length || all[i - 1] !== "");
   const pages: string[][] = [];
   for (let i = 0; i < text.length; i += 46) pages.push(text.slice(i, i + 46));
-  if (!pages.length) pages.push(["GelSight Studio", scan.name]);
+  if (!pages.length) pages.push(["Surface Measurement", scan.name]);
   const objects: string[] = [];
   const kids: string[] = [];
   const fontId = 3 + pages.length * 2;

@@ -2,7 +2,7 @@
 
 import { lut, type Cmap } from "../colormap";
 
-export function colorize(z: Float32Array | Float64Array, rows: number, cols: number, cmap: Cmap, symmetric = false): { rgb: Uint8Array; width: number; height: number; lo: number; hi: number } {
+export function colorize(z: Float32Array | Float64Array, rows: number, cols: number, cmap: Cmap, symmetric = false, maxDim = 0): { rgb: Uint8Array; width: number; height: number; lo: number; hi: number } {
   const finite: number[] = [];
   const step = Math.max(1, Math.floor(z.length / 20000));
   for (let i = 0; i < z.length; i += step) if (Number.isFinite(z[i])) finite.push(z[i]);
@@ -16,8 +16,7 @@ export function colorize(z: Float32Array | Float64Array, rows: number, cols: num
   }
   if (hi <= lo) hi = lo + 1e-9;
   const table = lut(cmap);
-  const maxDim = 720;
-  const factor = Math.max(1, Math.ceil(Math.max(rows, cols) / maxDim));
+  const factor = maxDim > 0 ? Math.max(1, Math.ceil(Math.max(rows, cols) / maxDim)) : 1;
   const h = Math.floor(rows / factor);
   const w = Math.floor(cols / factor);
   const rgb = new Uint8Array(w * h * 3);
@@ -53,22 +52,5 @@ export function colorize(z: Float32Array | Float64Array, rows: number, cols: num
 
 export function thumbnail(zMm: Float32Array, rows: number, cols: number, maxDim = 280): { rgb: Uint8Array; width: number; height: number } {
   const um = Float64Array.from(zMm, (v) => v * 1e3);
-  const painted = colorize(um, rows, cols, "turbo", false);
-  if (Math.max(painted.width, painted.height) <= maxDim) return painted;
-  const f = Math.max(painted.width, painted.height) / maxDim;
-  const w = Math.max(1, Math.round(painted.width / f));
-  const h = Math.max(1, Math.round(painted.height / f));
-  const rgb = new Uint8Array(w * h * 3);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const sx = Math.min(painted.width - 1, Math.floor(x * painted.width / w));
-      const sy = Math.min(painted.height - 1, Math.floor(y * painted.height / h));
-      const so = (sy * painted.width + sx) * 3;
-      const o = (y * w + x) * 3;
-      rgb[o] = painted.rgb[so];
-      rgb[o + 1] = painted.rgb[so + 1];
-      rgb[o + 2] = painted.rgb[so + 2];
-    }
-  }
-  return { rgb, width: w, height: h };
+  return colorize(um, rows, cols, "height", false, maxDim);
 }

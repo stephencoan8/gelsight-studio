@@ -22,7 +22,7 @@ export interface RawFrames {
   data: Uint16Array;
 }
 
-const DB = "gelsight-studio";
+const DB = "surface-measurement";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -97,13 +97,21 @@ export async function saveHeight(id: string, z: Float32Array) {
   await request(db.transaction("heights", "readwrite").objectStore("heights").put(copy, id));
 }
 
+function asFloat32(bytes: Uint8Array): Float32Array {
+  const n = Math.floor(bytes.byteLength / 4);
+  if (bytes.byteOffset % 4 === 0) return new Float32Array(bytes.buffer, bytes.byteOffset, n);
+  const copy = new ArrayBuffer(n * 4);
+  new Uint8Array(copy).set(bytes.subarray(0, n * 4));
+  return new Float32Array(copy);
+}
+
 export async function loadHeight(id: string): Promise<Float32Array> {
   const file = await readBytes("heights", `${id}.f32`);
-  if (file) return new Float32Array(file.buffer, file.byteOffset, file.byteLength / 4);
+  if (file) return asFloat32(file);
   const db = await openDb();
   const stored = await request(db.transaction("heights").objectStore("heights").get(id)) as Uint8Array | undefined;
   if (!stored) throw new Error("this scan has no height map");
-  return new Float32Array(stored.buffer, stored.byteOffset, stored.byteLength / 4);
+  return asFloat32(stored);
 }
 
 export async function saveRaw(id: string, raw: RawFrames) {

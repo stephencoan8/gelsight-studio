@@ -1,7 +1,7 @@
 [project]
-name = "gelsight-studio"
+name = "surface-measurement"
 version = "1.0.0"
-description = "Private local studio for GelSight tactile 3D scans."
+description = "Browser app for tactile surface measurement."
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
@@ -12,7 +12,7 @@ addopts = "-q"
 [tool.ruff]
 line-length = 120
 target-version = "py310"
-src = ["gelsight", "studio", "backend", "tests"]
+src = ["tactile", "studio", "backend", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

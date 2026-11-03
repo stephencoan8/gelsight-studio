@@ -3,11 +3,12 @@
 import { ballHeightScale, capMask, parseCalibYaml, parseScanYaml, splitFlatfield } from "./num/calib";
 import { thumbnail } from "./num/color";
 import { KEYENCE_UM, STYLUS_UM } from "./num/constants";
-import { coupon, shiftedCopy, validationPlate } from "./num/demo";
+import { coupon, reliefFrames, shiftedCopy, validationPlate } from "./num/demo";
 import { readHeightFile, readZag, readZip, writeCsv, writeNpy, writeStl, writeTiff } from "./num/io";
 import { alignAndDiff } from "./num/register";
 import { applyView, compute, type ViewOpts } from "./num/tools";
 import { evaluateTransfer } from "./num/transfer";
+import { nativeField } from "./num/field";
 import { perScanTable, validationReport } from "./num/validationReport";
 import { decodePng, pngDataUrl, toBase64 } from "./num/png";
 import { colorize } from "./num/color";
@@ -55,45 +56,13 @@ async function thumbOf(z: Float32Array, rows: number, cols: number): Promise<str
   return pngDataUrl(t.rgb, t.width, t.height);
 }
 
-function preview(zMm: Float32Array, rows: number, cols: number, mmpp: number): Field {
-  const factor = Math.max(1, Math.ceil(Math.max(rows, cols) / 640));
-  const h = Math.floor(rows / factor);
-  const w = Math.floor(cols / factor);
-  const out = new Float32Array(w * h);
-  let zmin = Infinity;
-  let zmax = -Infinity;
-  let sum = 0;
-  let n = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0;
-      let c = 0;
-      for (let dy = 0; dy < factor; dy++) {
-        for (let dx = 0; dx < factor; dx++) {
-          const v = zMm[(y * factor + dy) * cols + (x * factor + dx)];
-          if (Number.isFinite(v)) {
-            s += v;
-            c++;
-          }
-        }
-      }
-      const um = c ? (s / c) * 1e3 : NaN;
-      out[y * w + x] = um;
-      if (Number.isFinite(um)) {
-        zmin = Math.min(zmin, um);
-        zmax = Math.max(zmax, um);
-        sum += um;
-        n++;
-      }
-    }
-  }
-  const mean = n ? sum / n : 0;
-  if (!n) {
-    zmin = 0;
-    zmax = 1;
-  }
-  for (let i = 0; i < out.length; i++) if (!Number.isFinite(out[i])) out[i] = mean;
-  return { w, h, fullW: cols, fullH: rows, previewMmpp: mmpp * factor, fullMmpp: mmpp, z: out, zmin, zmax };
+const heightListeners = new Set<(id: string) => void>();
+export function onHeightUpdated(cb: (id: string) => void) {
+  heightListeners.add(cb);
+  return () => heightListeners.delete(cb);
+}
+function notifyHeight(id: string) {
+  for (const cb of heightListeners) cb(id);
 }
 
 async function addMap(spec: {
@@ -168,7 +137,7 @@ export async function seedDemo() {
   const step = coupon();
   const scans = [];
   for (const spec of [plate, shifted, step]) {
-    scans.push(await addMap({
+    const scan = await addMap({
       name: spec.name,
       z: Float32Array.from(spec.z),
       rows: spec.rows,
@@ -179,16 +148,42 @@ export async function seedDemo() {
       notes: spec.notes,
       project: "Demonstration",
       meta: { synthetic: true },
-    }));
+    });
+    if (spec === plate) {
+      await db.saveRaw(scan.id, {
+        width: spec.cols,
+        height: spec.rows,
+        depth: 16,
+        data: reliefFrames(spec.z, spec.rows, spec.cols, spec.mmpp),
+      });
+    }
+    scans.push(scan);
   }
   return { scans, calibration, already: false };
+}
+
+export async function loadFrames(id: string): Promise<{ width: number; height: number; depth: number; planes: Uint16Array[] } | null> {
+  const raw = await db.loadRaw(id);
+  if (!raw) return null;
+  const n = raw.width * raw.height;
+  if (raw.data.length < n * 6) return null;
+  const planes: Uint16Array[] = [];
+  for (let k = 0; k < 6; k++) {
+    const plane = new Uint16Array(n);
+    for (let i = 0; i < n; i++) plane[i] = raw.data[i * 6 + k];
+    planes.push(plane);
+  }
+  return { width: raw.width, height: raw.height, depth: raw.depth, planes };
 }
 
 export async function loadField(id: string, view: Partial<ViewOpts>): Promise<Field> {
   const scan = await getScan(id);
   const height = await db.loadHeight(id);
+  const filters = (view.median_px ?? 0) > 1 || (view.gaussian_mm ?? 0) > 0 || (view.form_mm ?? 0) > 0;
+  const leveled = view.level && view.level !== "none";
+  if (!filters && !leveled) return nativeField(height, scan.height, scan.width, scan.mmpp);
   const prepared = applyView(Float64Array.from(height), scan.height, scan.width, scan.mmpp, view);
-  return preview(Float32Array.from(prepared), scan.height, scan.width, scan.mmpp);
+  return nativeField(prepared, scan.height, scan.width, scan.mmpp);
 }
 
 async function activePlate(): Promise<{ gain: number; offset_um: number; name: string } | null> {
@@ -296,7 +291,7 @@ async function storeModel(id: string, parsed: ReturnType<typeof parseCalibYaml>,
     gel_id: parsed.gel || current.gel_id,
     camera_serial: parsed.camera || current.camera_serial,
     photometric: {
-      model: "gelsight-quadfit",
+      model: "quadfit",
       file: parsed.file,
       gel_id: parsed.gel,
       camera_serial: parsed.camera,
@@ -305,7 +300,7 @@ async function storeModel(id: string, parsed: ReturnType<typeof parseCalibYaml>,
       groove_width_mm: parsed.grooveWidthMm,
       has_flatfield: Boolean(flat),
       gamma: 0.7,
-      note: "GelSight's own coefficients. This is the photometric model the stylus comparison used, at full resolution.",
+      note: "the sensor's own coefficients. This is the photometric model the stylus comparison used, at full resolution.",
     },
   };
   await db.putCalibration(next);
@@ -346,7 +341,7 @@ export async function loadReference(): Promise<Calibration> {
     gel_id: "5BA5-R9MX",
     mmpp: 0.0068283057708,
     k_scale: 0.0069 / 0.0068283057708,
-    notes: `Published profile. Photometry is GelSight's quadfit. Plate transfer ${report.model.formula} was fit on Scan055–058. Single-scan leave-one-rotation-out versus stylus is 0.88 µm.`,
+    notes: `Published profile. Photometry is the sensor's quadfit. Plate transfer ${report.model.formula} was fit on Scan055–058. Single-scan leave-one-rotation-out versus stylus is 0.88 µm.`,
   });
   await storeModel(cal.id, parsed, tiles);
   const fitted = await fitPlate(cal.id, perScanTable(), STYLUS_UM, KEYENCE_UM);
@@ -529,7 +524,7 @@ export async function exportBlob(id: string, fmt: string, decimate = 4): Promise
   if (fmt === "stl") return { blob: bytesBlob(writeStl(z, scan.height, scan.width, scan.mmpp, decimate), "model/stl"), filename: `${safe}.stl` };
   if (fmt === "csv") return { blob: new Blob([writeCsv(z, scan.height, scan.width, scan.mmpp)], { type: "text/csv" }), filename: `${safe}.csv` };
   if (fmt === "png") {
-    const painted = colorize(Float32Array.from(z, (v) => v * 1e3), scan.height, scan.width, "turbo", false);
+    const painted = colorize(Float32Array.from(z, (v) => v * 1e3), scan.height, scan.width, "height", false);
     const png = await encodePngRGB(painted.rgb, painted.width, painted.height);
     return { blob: bytesBlob(png, "image/png"), filename: `${safe}.png` };
   }
@@ -606,7 +601,7 @@ export async function importFiles(files: File[], mmpp: number, zUnit: string, ta
       if (yamlName) {
         const siblings = Object.entries(inner).map(([name, data]) => ({ file: new File([copyBuffer(data)], name.split("/").pop() || name), rel: name }));
         const yaml = siblings.find((s) => s.rel === yamlName);
-        if (yaml) created.push(await importGelSight(yaml.file, siblings, tagList));
+        if (yaml) created.push(await importSensorScan(yaml.file, siblings, tagList));
         continue;
       }
       for (const [name, data] of Object.entries(inner)) {
@@ -621,7 +616,7 @@ export async function importFiles(files: File[], mmpp: number, zUnit: string, ta
     const parent = yaml.rel.includes("/") ? yaml.rel.slice(0, yaml.rel.lastIndexOf("/")) : "";
     const siblings = items.filter((i) => (parent ? i.rel.startsWith(`${parent}/`) : true));
     siblings.forEach((i) => used.add(i.file));
-    created.push(await importGelSight(yaml.file, siblings, tagList));
+    created.push(await importSensorScan(yaml.file, siblings, tagList));
   }
   for (const item of items) {
     if (used.has(item.file)) continue;
@@ -633,7 +628,7 @@ export async function importFiles(files: File[], mmpp: number, zUnit: string, ta
   return created;
 }
 
-async function importGelSight(yamlFile: File, siblings: { file: File; rel: string }[], tags: string[]): Promise<Scan> {
+async function importSensorScan(yamlFile: File, siblings: { file: File; rel: string }[], tags: string[]): Promise<Scan> {
   const text = await yamlFile.text();
   const doc = parseScanYaml(text);
   const byName = new Map(siblings.map((s) => [s.rel.split("/").pop()!.toLowerCase(), s]));
@@ -651,6 +646,7 @@ async function importGelSight(yamlFile: File, siblings: { file: File; rel: strin
   let mmpp = doc.mmpp || 0.0069;
   let notes = "";
   let needs = false;
+  let preparedFull: PreparedRecon | null = null;
   if (tmd) {
     const map = await readHeightFile(tmd.rel, new Uint8Array(await tmd.file.arrayBuffer()), mmpp, "mm");
     z = map.z;
@@ -659,41 +655,200 @@ async function importGelSight(yamlFile: File, siblings: { file: File; rel: strin
     mmpp = map.mmpp || mmpp;
     notes = map.notes || "";
   } else if (images.length >= 6) {
-    const first = await decodeImage(images[0].file);
-    rows = first.h;
-    cols = first.w;
-    z = new Float32Array(rows * cols);
-    notes = "No .tmd in this folder. Reconstruct from the six images with a sensor profile.";
-    needs = true;
-  } else throw new Error(`${yamlFile.name} has neither a .tmd nor six images`);
-  let photo: string | undefined;
+    const prepared = await prepareReconstruction(images, siblings, doc);
+    const rebuilt = prepared ? await reconstructImages({ ...prepared, factor: 4 }) : null;
+    if (rebuilt && prepared) {
+      z = rebuilt.z;
+      rows = rebuilt.rows;
+      cols = rebuilt.cols;
+      mmpp = rebuilt.mmpp;
+      notes = "Preview height. Full resolution follows.";
+      preparedFull = prepared;
+    } else {
+      const first = await decodeImage(images[0].file);
+      rows = first.h;
+      cols = first.w;
+      z = new Float32Array(rows * cols);
+      notes = "No height file in this folder, and the calibration could not be applied.";
+      needs = true;
+    }
+  } else throw new Error(`${yamlFile.name} has neither a height file nor six images`);
+  const thumb = byName.get("thumbnail.jpg") || byName.get("thumbnail.jpeg");
+  let photo: string | undefined = thumb ? await fileToDataUrl(thumb.file) : undefined;
   let raw: { depth: number; width: number; height: number; data: Uint16Array } | undefined;
+  if (!photo && images[0]) photo = await photoOf(await decodeImage(images[0].file));
   if (images.length >= 6) {
     const planes = [];
     for (const image of images.slice(0, 6)) planes.push(await decodeImage(image.file));
     const w = planes[0].w;
     const h = planes[0].h;
-    if (planes.some((p) => p.w !== w || p.h !== h)) throw new Error("the six images do not share a size");
-    const data = new Uint16Array(h * w * 6);
-    for (let i = 0; i < h * w; i++) for (let k = 0; k < 6; k++) data[i * 6 + k] = planes[k].gray[i];
-    raw = { depth: planes[0].depth, width: w, height: h, data };
-    photo = await photoOf(planes[0]);
-  } else if (images[0]) photo = await photoOf(await decodeImage(images[0].file));
+    if (planes.every((p) => p.w === w && p.h === h)) {
+      const data = new Uint16Array(h * w * 6);
+      for (let i = 0; i < h * w; i++) for (let k = 0; k < 6; k++) data[i * 6 + k] = planes[k].gray[i];
+      raw = { depth: planes[0].depth, width: w, height: h, data };
+    }
+  }
   const folder = relOf(yamlFile);
   const scan = await addMap({
-    name: folder.includes("/") ? folder.split("/").slice(0, -1).pop() || "GelSight scan" : "GelSight scan",
+    name: folder.includes("/") ? folder.split("/").slice(0, -1).pop() || "sensor scan" : "sensor scan",
     z,
     rows,
     cols,
     mmpp,
-    source: "gelsight",
-    tags: [...new Set([...tags, "gelsight", ...(needs ? ["needs-reconstruction"] : [])])],
+    source: "sensor",
+    tags: [...new Set([...tags, "sensor", ...(needs ? ["needs-reconstruction"] : [])])],
     notes,
-    meta: { mmperpixel: doc.mmpp ?? null, n_images: images.length, needs_reconstruction: needs, sensor_mmpp: mmpp },
+    meta: {
+      mmperpixel: doc.mmpp ?? null,
+      n_images: images.length,
+      needs_reconstruction: needs,
+      sensor_mmpp: mmpp,
+      height_file: doc.active ?? null,
+      normal_map: doc.normal ?? null,
+      calib: doc.calib ?? null,
+      reconstructed: preparedFull ? { factor: 4, k: preparedFull.k } : undefined,
+    },
     photo,
   });
   if (raw) await db.saveRaw(scan.id, raw);
+  if (preparedFull) {
+    await db.putCalibData(scan.id, {
+      quad: preparedFull.quad,
+      scale: preparedFull.scale,
+      flatH: preparedFull.flatH,
+      flatW: preparedFull.flatW,
+      flat: preparedFull.flat,
+    });
+    void finishFullResolution(scan.id, preparedFull);
+  }
   return scan;
+}
+
+type PreparedRecon = {
+  images: Float32Array;
+  height: number;
+  width: number;
+  quad: Float64Array;
+  flat: Float32Array;
+  flatH: number;
+  flatW: number;
+  scale: Float64Array;
+  mmpp: number;
+  k: number;
+};
+
+async function prepareReconstruction(
+  images: { file: File }[],
+  siblings: { file: File; rel: string }[],
+  doc: { mmpp?: number; calib?: string },
+): Promise<PreparedRecon | null> {
+  const byName = new Map(siblings.map((s) => [s.rel.split("/").pop()!.toLowerCase(), s]));
+  const calibName = doc.calib?.split(/[/\\]/).pop()?.toLowerCase();
+  const calibFile = (calibName && byName.get(calibName)) || siblings.find((s) => /^calib-.*\.ya?ml$/i.test(s.rel.split("/").pop() || ""));
+  if (!calibFile) return null;
+  const parsed = parseCalibYaml(await calibFile.file.text(), calibFile.file.name);
+  const pngName = calibFile.file.name.replace(/\.ya?ml$/i, ".png").toLowerCase();
+  const pngFile = byName.get(pngName) || siblings.find((s) => /^calib-.*\.png$/i.test(s.rel.split("/").pop() || ""));
+  if (!pngFile) return null;
+  const png = await decodePng(new Uint8Array(await pngFile.file.arrayBuffer()));
+  const tiles = splitFlatfield(png.samples, png.width, png.height, png.depth);
+  const planes = [];
+  for (const image of images.slice(0, 6)) planes.push(await decodeImage(image.file));
+  const width = planes[0].w;
+  const height = planes[0].h;
+  if (planes.some((p) => p.w !== width || p.h !== height)) return null;
+  const frames = new Float32Array(height * width * 6);
+  const denom = planes[0].depth === 16 ? 65535 : 255;
+  for (let i = 0; i < height * width; i++) {
+    for (let k = 0; k < 6; k++) frames[i * 6 + k] = planes[k].gray[i] / denom;
+  }
+  const scanMmpp = doc.mmpp || parsed.mmpp || 0.0069;
+  const k = parsed.mmpp && scanMmpp ? parsed.mmpp / scanMmpp : 1;
+  return { images: frames, height, width, quad: parsed.quad, flat: tiles.data, flatH: tiles.fh, flatW: tiles.fw, scale: parsed.scale, mmpp: scanMmpp, k };
+}
+
+const upgrading = new Set<string>();
+
+async function finishFullResolution(id: string, prepared: PreparedRecon) {
+  if (upgrading.has(id)) return;
+  upgrading.add(id);
+  try {
+    status("Full resolution");
+    const out = await reconstructImages({
+      ...prepared,
+      factor: 1,
+      onProgress: (label, frac) => status(`${label} ${Math.round(frac * 100)}%`),
+    });
+    const scan = await getScan(id);
+    await db.saveHeight(id, out.z);
+    await db.putScan({
+      ...scan,
+      width: out.cols,
+      height: out.rows,
+      mmpp: out.mmpp,
+      fov_mm: [out.cols * out.mmpp, out.rows * out.mmpp],
+      notes: "Full-resolution height from the six images and the calibration in this folder.",
+      meta: {
+        ...scan.meta,
+        reconstructed: {
+          ...(typeof scan.meta.reconstructed === "object" && scan.meta.reconstructed ? scan.meta.reconstructed : {}),
+          factor: 1,
+          mmpp: out.mmpp,
+        },
+      },
+    });
+    notifyHeight(id);
+  } catch (err) {
+    status(err instanceof Error ? err.message : "full resolution failed");
+  } finally {
+    upgrading.delete(id);
+    status("");
+  }
+}
+
+export async function upgradeHeight(id: string) {
+  if (upgrading.has(id)) return;
+  const scan = await getScan(id);
+  const factor = (scan.meta.reconstructed as { factor?: number } | undefined)?.factor;
+  if (factor === 1) return;
+  const data = await db.getCalibData(id);
+  const raw = await db.loadRaw(id);
+  if (!data?.quad || !data.flat || !data.flatH || !data.flatW || !data.scale || !raw) return;
+  const reduced = (factor != null && factor > 1) || raw.width > scan.width || raw.height > scan.height;
+  if (!reduced) return;
+  const frames = new Float32Array(raw.data.length);
+  const denom = raw.depth === 16 ? 65535 : 255;
+  for (let i = 0; i < frames.length; i++) frames[i] = raw.data[i] / denom;
+  const sensor = Number(scan.meta.sensor_mmpp || scan.mmpp);
+  const k = (scan.meta.reconstructed as { k?: number } | undefined)?.k ?? 1;
+  await finishFullResolution(id, {
+    images: frames,
+    height: raw.height,
+    width: raw.width,
+    quad: data.quad,
+    flat: data.flat,
+    flatH: data.flatH,
+    flatW: data.flatW,
+    scale: data.scale,
+    mmpp: sensor,
+    k,
+  });
+}
+
+async function fileToDataUrl(file: File): Promise<string | undefined> {
+  if (typeof createImageBitmap !== "function") return undefined;
+  try {
+    const bmp = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    const max = 480;
+    const f = Math.max(1, Math.max(bmp.width, bmp.height) / max);
+    canvas.width = Math.max(1, Math.round(bmp.width / f));
+    canvas.height = Math.max(1, Math.round(bmp.height / f));
+    canvas.getContext("2d")?.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return undefined;
+  }
 }
 
 async function decodeImage(file: File): Promise<{ w: number; h: number; depth: number; gray: Uint16Array }> {

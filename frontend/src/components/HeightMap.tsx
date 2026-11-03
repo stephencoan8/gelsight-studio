@@ -16,6 +16,8 @@ export function HeightMap({
   onCursor,
   onClick,
   onRect,
+  pixelPerfect,
+  backdrop,
 }: {
   field: Field;
   cmap: Cmap;
@@ -28,6 +30,10 @@ export function HeightMap({
   onCursor: (c: Cursor) => void;
   onClick: (x: number, y: number, shift: boolean) => void;
   onRect: (x0: number, y0: number, x1: number, y1: number) => void;
+  /** One stored sample equals one device pixel. */
+  pixelPerfect?: boolean;
+  /** Full-grid photograph. Null shows the height colours. */
+  backdrop?: ImageData | null;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLCanvasElement>(null);
@@ -74,7 +80,9 @@ export function HeightMap({
     const dh = field.h * field.previewMmpp * ppm;
     const dx = w / 2 - cx * ppm;
     const dy = h / 2 - cy * ppm;
-    ctx.imageSmoothingEnabled = ppm * field.previewMmpp < 1.2;
+    const dprNow = window.devicePixelRatio || 1;
+    ctx.imageSmoothingQuality = "high";
+    ctx.imageSmoothingEnabled = dw * dprNow < src.width - 0.5;
     ctx.drawImage(src, dx, dy, dw, dh);
     const o = b.getContext("2d");
     if (!o) return;
@@ -111,17 +119,23 @@ export function HeightMap({
   }
 
   useEffect(() => {
-    const [lo, hi] = limitsOf(field, symmetric);
-    const image = colorize(field.z, field.w, field.h, lo, hi, cmap, false);
     const c = document.createElement("canvas");
     c.width = field.w;
     c.height = field.h;
-    c.getContext("2d")?.putImageData(image, 0, 0);
+    const ctx = c.getContext("2d");
+    if (backdrop && backdrop.width === field.w && backdrop.height === field.h) {
+      ctx?.putImageData(backdrop, 0, 0);
+    } else {
+      const [lo, hi] = limitsOf(field, symmetric);
+      const image = colorize(field.z, field.w, field.h, lo, hi, cmap, false);
+      ctx?.putImageData(image, 0, 0);
+    }
     off.current = c;
-    fit();
+    if (pixelPerfect) oneToOne();
+    else fit();
     // fit() paints. Re-run when the field or the colour scale changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field, cmap, symmetric]);
+  }, [field, cmap, symmetric, pixelPerfect, backdrop]);
 
   useEffect(() => {
     paint();
@@ -141,6 +155,12 @@ export function HeightMap({
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function oneToOne() {
+    const dpr = window.devicePixelRatio || 1;
+    cam.current.ppm = 1 / (field.previewMmpp * dpr);
+    paint();
+  }
 
   function eventMm(e: ReactMouseEvent<HTMLDivElement> | ReactPointerEvent<HTMLDivElement>) {
     const el = wrap.current!;
@@ -292,9 +312,10 @@ export function limitsOf(field: { z: Float32Array; zmin: number; zmax: number },
     const lim = Math.max(Math.abs(field.zmin), Math.abs(field.zmax), 1e-6);
     return [-lim, lim];
   }
-  const step = Math.max(1, Math.floor(field.z.length / 20000));
+  const step = Math.max(1, Math.floor(field.z.length / 80000));
   const sample: number[] = [];
-  for (let i = 0; i < field.z.length; i += step) sample.push(field.z[i]);
+  for (let i = 0; i < field.z.length; i += step) if (Number.isFinite(field.z[i])) sample.push(field.z[i]);
+  if (sample.length < 2) return [field.zmin, field.zmax];
   sample.sort((a, b) => a - b);
   const q = (p: number) => sample[Math.min(sample.length - 1, Math.max(0, Math.floor(p * (sample.length - 1))))];
   const lo = q(0.02);

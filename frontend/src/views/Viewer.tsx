@@ -16,7 +16,7 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
   const [items, setItems] = useState<Measurement[]>([]);
   const [tool, setTool] = useState<Tool>("navigate");
   const [mode, setMode] = useState<"map" | "3d" | "split">("split");
-  const [cmap, setCmap] = useState<"turbo" | "gray" | "coolwarm">("turbo");
+  const [cmap, setCmap] = useState<"height" | "turbo" | "gray" | "coolwarm">("height");
   const [exag, setExag] = useState(12);
   const [draft, setDraft] = useState<{ x: number; y: number }[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -247,6 +247,7 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
         )}
         {recon && <span className="mono" style={{ color: "var(--muted)" }}>{recon}</span>}
         <select value={cmap} onChange={(e) => setCmap(e.target.value as typeof cmap)} aria-label="Colour map">
+          <option value="height">Height</option>
           <option value="turbo">Turbo</option>
           <option value="gray">Grey</option>
           <option value="coolwarm">Diverging</option>
@@ -299,10 +300,6 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
       </div>
       <aside className="inspector">
         <h2>{guide.label}</h2>
-        <div className="guide">
-          <b>Setup. </b>
-          {guide.hint} Reference regions for a groove sit outside the half-depth width, one on each side. Hole diameter uses 25 µm below the local land (annulus 1.15–1.5 R), because the gel sags 5–12 µm around a hole.
-        </div>
         {(tool === "profile" || tool === "groove" || tool === "step") && (
           <label className="field" style={{ marginBottom: 8 }}>
             Averaging width (mm)
@@ -364,17 +361,22 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
                 name,
                 steps: items.map((m) => ({ kind: m.kind, name: m.name, params: m.params, geometry: m.geometry, view: m.view })),
               });
-              alert("Recipe saved. Apply it from Recipes.");
+              alert("Recipe saved.");
             }}
           >
             Save as recipe
           </button>
-          <button className="btn" onClick={() => downloadReport(scanId, "pdf").catch((e: Error) => setError(e.message))}>PDF</button>
-          <button className="btn" onClick={() => downloadReport(scanId, "csv").catch((e: Error) => setError(e.message))}>CSV</button>
-          <button className="btn" onClick={() => downloadExport(scanId, "tiff").catch((e: Error) => setError(e.message))}>TIFF</button>
-          <button className="btn" onClick={() => downloadExport(scanId, "npy").catch((e: Error) => setError(e.message))}>NPY</button>
-          <button className="btn" onClick={() => downloadExport(scanId, "stl").catch((e: Error) => setError(e.message))}>STL</button>
         </div>
+        <details className="fold">
+          <summary>Export</summary>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn" onClick={() => downloadReport(scanId, "pdf").catch((e: Error) => setError(e.message))}>PDF</button>
+            <button className="btn" onClick={() => downloadReport(scanId, "csv").catch((e: Error) => setError(e.message))}>CSV</button>
+            <button className="btn" onClick={() => downloadExport(scanId, "tiff").catch((e: Error) => setError(e.message))}>TIFF</button>
+            <button className="btn" onClick={() => downloadExport(scanId, "npy").catch((e: Error) => setError(e.message))}>NPY</button>
+            <button className="btn" onClick={() => downloadExport(scanId, "stl").catch((e: Error) => setError(e.message))}>STL</button>
+          </div>
+        </details>
       </aside>
       {series && (
         <div className="plotdock">
@@ -440,14 +442,11 @@ function Editor({ m, onChange, onDelete }: { m: Measurement; onChange: (b: Recor
         <button className="btn" onClick={() => onChange({ name })}>Update</button>
         <button className="btn danger" onClick={onDelete}>Delete</button>
       </div>
-      <p style={{ color: "var(--faint)", fontSize: 12 }}>
-        Coordinates are in the geometry. Change a threshold or the name and update; the number is recomputed on the full-resolution map.
-      </p>
     </div>
   );
 }
 
-function Colorbar({ lo, hi, cmap }: { lo: number; hi: number; cmap: "turbo" | "gray" | "coolwarm" }) {
+function Colorbar({ lo, hi, cmap }: { lo: number; hi: number; cmap: "height" | "turbo" | "gray" | "coolwarm" }) {
   const ref = useState<HTMLCanvasElement | null>(null);
   // draw via ref callback
   return (
@@ -460,7 +459,7 @@ function Colorbar({ lo, hi, cmap }: { lo: number; hi: number; cmap: "turbo" | "g
           const ctx = node.getContext("2d");
           if (!ctx) return;
           const g = ctx.createLinearGradient(0, 256, 0, 0);
-          const stops = cmap === "coolwarm" ? ["#3a5f9e", "#f4f4f4", "#b94a48"] : cmap === "gray" ? ["#111", "#eee"] : ["#1b2a6b", "#2ec4b6", "#f7e34a", "#d62728"];
+          const stops = cmap === "coolwarm" ? ["#3a5f9e", "#f4f4f4", "#b94a48"] : cmap === "gray" ? ["#111", "#eee"] : cmap === "turbo" ? ["#1b2a6b", "#2ec4b6", "#f7e34a", "#d62728"] : ["#3d4f73", "#6fbfb4", "#d5d48a", "#c6b15a"];
           stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c));
           ctx.fillStyle = g;
           ctx.fillRect(0, 0, 12, 256);

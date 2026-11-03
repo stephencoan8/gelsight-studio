@@ -63,7 +63,7 @@ def validation_plate(
         "mmpp": mmpp,
         "source": "synthetic",
         "tags": ["synthetic", "plate"],
-        "notes": "Demonstration geometry. Not a GelSight or Keyence capture.",
+        "notes": "Demonstration geometry. Not a sensor or Keyence capture.",
     }
 
 

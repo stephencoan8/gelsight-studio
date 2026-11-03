@@ -7,7 +7,7 @@ the groove, outside the half-depth width and inset from a 0.25 mm margin.
 That is the ISO-style left/right reference the plate numbers were computed with.
 
 ``level`` and ``detrend`` are the same robust fits (MAD gate, eight or ten
-iterations). ``detrend`` is a degree-4 polynomial and is the GelSight-only
+iterations). ``detrend`` is a degree-4 polynomial and is the sensor-only
 pre-step; it is not applied to Keyence.
 """
 
@@ -121,7 +121,7 @@ def measure(h: np.ndarray, mmpp: float) -> dict:
     """Land, grooves, and compact holes in a height map (micrometres).
 
     ``mmpp`` is millimetres per pixel. Groove ``depth_um`` is the median of the
-    per-row reference-region depths. This is the fixed Keyence/GelSight procedure
+    per-row reference-region depths. This is the fixed Keyence/sensor procedure
     from the study, generalised only for image size.
     """
     h = np.asarray(h, float)

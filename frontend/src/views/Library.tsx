@@ -44,15 +44,14 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
     <div className="page">
       <div className="row">
         <div>
-          <h1>Library</h1>
-          <p className="lede">Scans stay on this machine. Search by name, tag, or note.</p>
+          <h1>Scans</h1>
         </div>
         <div className="spacer" />
         <button className="btn" onClick={() => seedDemo().then(() => { refresh(); onChanged?.(); })}>
-          Load demonstration set
+          Demo
         </button>
         <button className="btn-primary" onClick={() => setImportOpen(true)}>
-          Import
+          Open
         </button>
       </div>
       <div className="row" style={{ marginBottom: 16 }}>
@@ -66,7 +65,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
           }}
           style={{ minWidth: 240 }}
         />
-        {["", "synthetic", "gelsight", "keyence", "plate"].map((t) => (
+        {["", "synthetic", "sensor", "keyence", "plate"].map((t) => (
           <button
             key={t || "all"}
             className={tag === t ? "btn-primary" : "btn-ghost"}
@@ -81,9 +80,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
       </div>
       {error && <div className="callout warn">{error}</div>}
       {!scans.length && !error && (
-        <div className="panel">
-          No scans yet. Import a GelSight folder, a Keyence .zag, or a height map — or load the demonstration set. The demonstration plate is synthetic and is not the stylus comparison.
-        </div>
+        <div className="panel">No scans.</div>
       )}
       <div className="cards">
         {scans.map((s) => (
@@ -135,10 +132,8 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
       {importOpen && (
         <div className="modal-back" onClick={() => setImportOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0 }}>Import</h2>
-            <p className="lede">
-              A GelSight folder (scan.yaml, images, .tmd), a Keyence .zag, or a TIFF, PNG, CSV, or NPY height map. Pixel size is read from GelSight and Keyence files. For a bare height map, set it here. Heights in the file are interpreted in the unit you choose and stored as millimetres.
-            </p>
+            <h2 style={{ marginTop: 0 }}>Open scan</h2>
+            <p className="lede">One scan folder, or a zip of that folder. The height file is used when it is present.</p>
             <div className="row">
               <label className="field">
                 mm / pixel

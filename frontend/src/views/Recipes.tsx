@@ -23,11 +23,8 @@ export function Recipes() {
   return (
     <div className="page">
       <h1>Recipes</h1>
-      <p className="lede">
-        A recipe is the measurements on a scan: kind, parameters, and geometry in millimetres. Applying it repeats those operations. Geometry is in the scan’s own coordinate frame, so the scans need to be fixtured the same way. Auto grooves do not need a position.
-      </p>
       {error && <div className="callout warn">{error}</div>}
-      {!list.length && <div className="panel">No recipes yet. Measure a scan, then use “Save as recipe” in the viewer.</div>}
+      {!list.length && <div className="panel">None yet.</div>}
       <div className="cards">
         {list.map((r) => (
           <button key={r.id} className="card" onClick={() => setActive(r.id)} style={{ outline: active === r.id ? "2px solid var(--accent)" : undefined }}>

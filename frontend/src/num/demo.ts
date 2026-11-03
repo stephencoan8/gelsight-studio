@@ -56,7 +56,7 @@ export function validationPlate(mmpp = 0.025, sagUm = 11, noiseUm = 0.25, bowUm 
     cols,
     mmpp,
     tags: ["synthetic", "plate"],
-    notes: "Demonstration geometry. Not a GelSight or Keyence capture.",
+    notes: "Demonstration geometry. Not a sensor or Keyence capture.",
   };
 }
 
@@ -88,6 +88,39 @@ export function coupon(mmpp = 0.02): DemoMap {
     }
   }
   return { name: "Synthetic step and scratch", z, rows, cols, mmpp, tags: ["synthetic", "coupon"], notes: "50 µm step and an 18 µm diagonal scratch." };
+}
+
+/** Six shaded views of a height map, one light direction each. Values are 16-bit and interleaved per pixel. */
+export function reliefFrames(zMm: ArrayLike<number>, rows: number, cols: number, mmpp: number): Uint16Array {
+  const data = new Uint16Array(rows * cols * 6);
+  const lights = [0, 60, 120, 180, 240, 300].map((deg) => {
+    const a = (deg * Math.PI) / 180;
+    const z = 0.55;
+    const s = Math.sqrt(1 - z * z);
+    return [Math.cos(a) * s, Math.sin(a) * s, z] as const;
+  });
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      const xm = x > 0 ? zMm[i - 1] : zMm[i];
+      const xp = x + 1 < cols ? zMm[i + 1] : zMm[i];
+      const ym = y > 0 ? zMm[i - cols] : zMm[i];
+      const yp = y + 1 < rows ? zMm[i + cols] : zMm[i];
+      let nx = (xm - xp) / (2 * mmpp);
+      let ny = (ym - yp) / (2 * mmpp);
+      let nz = 1;
+      const nn = Math.hypot(nx, ny, nz) || 1;
+      nx /= nn;
+      ny /= nn;
+      nz /= nn;
+      for (let k = 0; k < 6; k++) {
+        const [lx, ly, lz] = lights[k];
+        const shade = Math.max(0, nx * lx + ny * ly + nz * lz);
+        data[i * 6 + k] = Math.round(shade * 65535);
+      }
+    }
+  }
+  return data;
 }
 
 function mulberry(seed: number) {

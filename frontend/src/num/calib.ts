@@ -1,4 +1,4 @@
-/** Cap mask, sphere scale, and the GelSight calib yaml. The photometric fit is a check; reconstruction uses GelSight's quadfit. */
+/** Cap mask, sphere scale, and the sensor calib yaml. The photometric fit is a check; reconstruction uses the sensor's quadfit. */
 
 import { lstsq } from "./linalg";
 
@@ -74,9 +74,11 @@ export function parseCalibYaml(text: string, file = ""): CalibYaml {
   };
 }
 
-export function parseScanYaml(text: string): { mmpp?: number; active?: string; images: string[] } {
+export function parseScanYaml(text: string): { mmpp?: number; active?: string; normal?: string; calib?: string; images: string[] } {
   const mm = text.match(/mmperpixel:\s*([0-9.eE+-]+)/);
   const active = text.match(/activeheightmap:\s*(\S+)/)?.[1];
+  const normal = text.match(/activenormalmap:\s*(\S+)/)?.[1];
+  const calib = text.match(/^calib:\s*(\S+)/m)?.[1];
   const images: string[] = [];
   const section = text.split(/\nimages:\s*\n/)[1];
   if (section) {
@@ -86,7 +88,7 @@ export function parseScanYaml(text: string): { mmpp?: number; active?: string; i
       if (m) images.push(m[1]);
     }
   }
-  return { mmpp: mm ? Number(mm[1]) : undefined, active, images };
+  return { mmpp: mm ? Number(mm[1]) : undefined, active, normal, calib, images };
 }
 
 /** 3×2 flat-field montage to six tiles in [0, 1], interleaved (y, x, light). */

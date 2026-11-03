@@ -6,6 +6,6 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM nginx:1.27-alpine
-COPY --from=build /src/dist /usr/share/nginx/html/gelsight-studio
+COPY --from=build /src/dist /usr/share/nginx/html/surface-measurement
 EXPOSE 8080
-RUN printf 'server {\n  listen 8080;\n  root /usr/share/nginx/html;\n  location /gelsight-studio/ { try_files $uri $uri/ /gelsight-studio/index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
+RUN printf 'server {\n  listen 8080;\n  root /usr/share/nginx/html;\n  location /surface-measurement/ { try_files $uri $uri/ /surface-measurement/index.html; }\n}\n' > /etc/nginx/conf.d/default.conf

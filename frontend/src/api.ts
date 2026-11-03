@@ -17,6 +17,7 @@ export const patchScan = (id: string, body: Partial<Scan>) => engine.patchScan(i
 export const deleteScan = (id: string) => engine.deleteScan(id);
 export const importFiles = (files: File[], mmpp: number, zUnit: string, tags: string) => engine.importFiles(files, mmpp, zUnit, tags);
 export const loadField = (id: string, view: ViewOpts) => engine.loadField(id, view);
+export const loadFrames = (id: string) => engine.loadFrames(id);
 export const measurements = (id: string) => engine.measurements(id);
 export const measure = (id: string, body: unknown) => engine.measure(id, body as Parameters<typeof engine.measure>[1]);
 export const patchMeasurement = (id: string, body: unknown) => engine.patchMeasurement(id, body as Parameters<typeof engine.patchMeasurement>[1]);
@@ -39,6 +40,8 @@ export const compare = (body: unknown) => engine.compare(body as Parameters<type
 export const validation = () => engine.validation();
 export const reconstruct = (id: string, factor = 4) => engine.reconstruct(id, factor);
 export const onStatus = (cb: (s: string) => void) => engine.onStatus(cb);
+export const onHeightUpdated = (cb: (id: string) => void) => engine.onHeightUpdated(cb);
+export const upgradeHeight = (id: string) => engine.upgradeHeight(id);
 
 export async function downloadReport(id: string, fmt: string) {
   const { blob, filename } = await engine.reportBlob(id, fmt);
