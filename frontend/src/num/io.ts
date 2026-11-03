@@ -1,4 +1,4 @@
-/** Height-map readers and writers: NPY, TIFF, CSV, GelSight TMD, Keyence .zag. */
+/** Height-map readers and writers: NPY, TIFF, CSV, sensor TMD, Keyence .zag. */
 
 import { unzipSync } from "fflate";
 import { decodePng } from "./png";
@@ -236,7 +236,7 @@ export function writeStl(z: Float32Array, rows: number, cols: number, mmpp: numb
   for (let i = 0; i < h.length; i++) if (!Number.isFinite(h[i])) h[i] = fill;
   const ntri = r * c * 2;
   const out = new Uint8Array(84 + ntri * 50);
-  const enc = new TextEncoder().encode("GelSight Studio height");
+  const enc = new TextEncoder().encode("Surface Measurement height");
   out.set(enc, 0);
   const v = new DataView(out.buffer);
   v.setUint32(80, ntri, true);

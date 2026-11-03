@@ -56,7 +56,7 @@ export function validationPlate(mmpp = 0.025, sagUm = 11, noiseUm = 0.25, bowUm 
     cols,
     mmpp,
     tags: ["synthetic", "plate"],
-    notes: "Demonstration geometry. Not a GelSight or Keyence capture.",
+    notes: "Demonstration geometry. Not a sensor or Keyence capture.",
   };
 }
 

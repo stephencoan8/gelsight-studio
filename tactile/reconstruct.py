@@ -1,7 +1,7 @@
-"""Photometric reconstruction: GelSight quadfit, then Poisson, then K.
+"""Photometric reconstruction: sensor quadfit, then Poisson, then K.
 
 The published model is this chain at full resolution (downsample 1) with
-GelSight's own coefficients and no slope clamp, followed by the plate
+the sensor's own coefficients and no slope clamp, followed by the plate
 transfer on measured depths. Downsampling is a preview; it is not the model
 the stylus comparison used.
 """

@@ -47,7 +47,7 @@ export function validationReport() {
   }
   return {
     model: {
-      name: "GelSight quadfit, full resolution, plate gain and offset",
+      name: "sensor quadfit, full resolution, plate gain and offset",
       photometric: "Calib quadfit Q, no slope clamp, Poisson DCT",
       formula: `t = ${gain.toFixed(5)} · m + ${offset.toFixed(3)} µm`,
       gain,
@@ -80,7 +80,7 @@ export function validationReport() {
       id_loro_sty: native.id.loro_sty,
       id_mean4_sty: native.id.mean4_sty,
       gain_off_loro_mean_sty: native["gain+off"].loro_mean_sty,
-      note: "GelSight's own TMD, single-scan leave-one-rotation-out, no extra transfer.",
+      note: "the sensor's own TMD, single-scan leave-one-rotation-out, no extra transfer.",
     },
     keyence: {
       recomputed: true,

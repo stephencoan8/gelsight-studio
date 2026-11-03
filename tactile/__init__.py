@@ -1,4 +1,4 @@
-"""GelSight Studio numerics.
+"""Surface Measurement numerics.
 
 The reconstruction and the plate transfer are the models recorded in
 ``reference/experiment_log.md``. Nothing in this package replaces that

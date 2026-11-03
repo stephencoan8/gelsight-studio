@@ -1,4 +1,4 @@
-/** Cap mask, sphere scale, and the GelSight calib yaml. The photometric fit is a check; reconstruction uses GelSight's quadfit. */
+/** Cap mask, sphere scale, and the sensor calib yaml. The photometric fit is a check; reconstruction uses the sensor's quadfit. */
 
 import { lstsq } from "./linalg";
 

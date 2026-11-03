@@ -1,13 +1,13 @@
 """Grooves, holes, roughness, and the calibration-cap mask."""
 
 import numpy as np
-from gelsight.constants import STYLUS_UM
-from gelsight.demo import validation_plate
-from gelsight.fitcalib import ball_height_scale, cap_mask, fit_quadratic, groove_plate_scale
-from gelsight.holes import crossing, diameter_rules, measure_holes
-from gelsight.measure import detrend, level, measure
-from gelsight.photometric import monomials, phi
-from gelsight.roughness import areal, profile
+from tactile.constants import STYLUS_UM
+from tactile.demo import validation_plate
+from tactile.fitcalib import ball_height_scale, cap_mask, fit_quadratic, groove_plate_scale
+from tactile.holes import crossing, diameter_rules, measure_holes
+from tactile.measure import detrend, level, measure
+from tactile.photometric import monomials, phi
+from tactile.roughness import areal, profile
 
 
 def test_rectangular_trench_depth_and_width():
@@ -89,7 +89,7 @@ def test_hole_on_a_height_map_prefers_the_local_land():
 
 def test_synthetic_plate_grooves_recover_stylus_depths():
     plate = validation_plate(noise_um=0.0, sag_um=11.0, bow_um=0.0)
-    from gelsight.measure import measure_grooves_auto
+    from tactile.measure import measure_grooves_auto
 
     found = measure_grooves_auto(plate["z_mm"] * 1e3, plate["mmpp"])
     depths = [g["depth_um"] for g in found["grooves"]]

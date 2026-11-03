@@ -1,8 +1,8 @@
 """Plate-depth transfer and leave-one-rotation-out.
 
 The study measured six grooves on a validation plate at four rotations and fit
-a map from GelSight depth ``m`` to stylus depth. For the full-resolution
-GelSight-coefficient reconstruction, AICc and leave-one-groove-out both select
+a map from sensor depth ``m`` to stylus depth. For the full-resolution
+sensor-coefficient reconstruction, AICc and leave-one-groove-out both select
 a gain and an offset::
 
     t = 1.00485 * m + 1.289 µm

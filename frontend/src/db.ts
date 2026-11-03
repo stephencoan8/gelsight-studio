@@ -22,7 +22,7 @@ export interface RawFrames {
   data: Uint16Array;
 }
 
-const DB = "gelsight-studio";
+const DB = "surface-measurement";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

@@ -85,7 +85,7 @@ export function App() {
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 11c2.2-5 3.2-5 5.5 0S10 16 15 11" fill="none" stroke="var(--accent)" strokeWidth="1.6" /></svg>
           </div>
           <div>
-            <b>GelSight Studio</b>
+            <b>Surface Measurement</b>
             <span>in this browser</span>
           </div>
         </div>

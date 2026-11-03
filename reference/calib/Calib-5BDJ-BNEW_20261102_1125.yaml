@@ -45,13 +45,13 @@ flatfield:
     scale: [0.466350468609, 0.42334719866, 0.45539627284, 0.416724224143, 0.43109216414, 0.468113745455]
     size: (2464, 2056)
 metadata: 
-    appname: GelSight.Mobile
+    appname: Sensor.Mobile
     appversion: 4.1.89.0
     bga: BGA D10 S20
     date: 2026-11-02 11:25:11
     sdkversion: 4.1.89.0
 result: 
-    name: GelSight CAL-G520
+    name: calibration plate
     calibrationset: Calib_D440014_G5BDJ-BNEW_T20261102_112324
     circledistance_um: 13600
     groovedepth: 0.4759702574331766

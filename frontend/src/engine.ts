@@ -296,7 +296,7 @@ async function storeModel(id: string, parsed: ReturnType<typeof parseCalibYaml>,
     gel_id: parsed.gel || current.gel_id,
     camera_serial: parsed.camera || current.camera_serial,
     photometric: {
-      model: "gelsight-quadfit",
+      model: "quadfit",
       file: parsed.file,
       gel_id: parsed.gel,
       camera_serial: parsed.camera,
@@ -305,7 +305,7 @@ async function storeModel(id: string, parsed: ReturnType<typeof parseCalibYaml>,
       groove_width_mm: parsed.grooveWidthMm,
       has_flatfield: Boolean(flat),
       gamma: 0.7,
-      note: "GelSight's own coefficients. This is the photometric model the stylus comparison used, at full resolution.",
+      note: "the sensor's own coefficients. This is the photometric model the stylus comparison used, at full resolution.",
     },
   };
   await db.putCalibration(next);
@@ -346,7 +346,7 @@ export async function loadReference(): Promise<Calibration> {
     gel_id: "5BA5-R9MX",
     mmpp: 0.0068283057708,
     k_scale: 0.0069 / 0.0068283057708,
-    notes: `Published profile. Photometry is GelSight's quadfit. Plate transfer ${report.model.formula} was fit on Scan055–058. Single-scan leave-one-rotation-out versus stylus is 0.88 µm.`,
+    notes: `Published profile. Photometry is the sensor's quadfit. Plate transfer ${report.model.formula} was fit on Scan055–058. Single-scan leave-one-rotation-out versus stylus is 0.88 µm.`,
   });
   await storeModel(cal.id, parsed, tiles);
   const fitted = await fitPlate(cal.id, perScanTable(), STYLUS_UM, KEYENCE_UM);
@@ -606,7 +606,7 @@ export async function importFiles(files: File[], mmpp: number, zUnit: string, ta
       if (yamlName) {
         const siblings = Object.entries(inner).map(([name, data]) => ({ file: new File([copyBuffer(data)], name.split("/").pop() || name), rel: name }));
         const yaml = siblings.find((s) => s.rel === yamlName);
-        if (yaml) created.push(await importGelSight(yaml.file, siblings, tagList));
+        if (yaml) created.push(await importSensorScan(yaml.file, siblings, tagList));
         continue;
       }
       for (const [name, data] of Object.entries(inner)) {
@@ -621,7 +621,7 @@ export async function importFiles(files: File[], mmpp: number, zUnit: string, ta
     const parent = yaml.rel.includes("/") ? yaml.rel.slice(0, yaml.rel.lastIndexOf("/")) : "";
     const siblings = items.filter((i) => (parent ? i.rel.startsWith(`${parent}/`) : true));
     siblings.forEach((i) => used.add(i.file));
-    created.push(await importGelSight(yaml.file, siblings, tagList));
+    created.push(await importSensorScan(yaml.file, siblings, tagList));
   }
   for (const item of items) {
     if (used.has(item.file)) continue;
@@ -633,7 +633,7 @@ export async function importFiles(files: File[], mmpp: number, zUnit: string, ta
   return created;
 }
 
-async function importGelSight(yamlFile: File, siblings: { file: File; rel: string }[], tags: string[]): Promise<Scan> {
+async function importSensorScan(yamlFile: File, siblings: { file: File; rel: string }[], tags: string[]): Promise<Scan> {
   const text = await yamlFile.text();
   const doc = parseScanYaml(text);
   const byName = new Map(siblings.map((s) => [s.rel.split("/").pop()!.toLowerCase(), s]));
@@ -681,13 +681,13 @@ async function importGelSight(yamlFile: File, siblings: { file: File; rel: strin
   } else if (images[0]) photo = await photoOf(await decodeImage(images[0].file));
   const folder = relOf(yamlFile);
   const scan = await addMap({
-    name: folder.includes("/") ? folder.split("/").slice(0, -1).pop() || "GelSight scan" : "GelSight scan",
+    name: folder.includes("/") ? folder.split("/").slice(0, -1).pop() || "sensor scan" : "sensor scan",
     z,
     rows,
     cols,
     mmpp,
-    source: "gelsight",
-    tags: [...new Set([...tags, "gelsight", ...(needs ? ["needs-reconstruction"] : [])])],
+    source: "sensor",
+    tags: [...new Set([...tags, "sensor", ...(needs ? ["needs-reconstruction"] : [])])],
     notes,
     meta: { mmperpixel: doc.mmpp ?? null, n_images: images.length, needs_reconstruction: needs, sensor_mmpp: mmpp },
     photo,

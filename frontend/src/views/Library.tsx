@@ -66,7 +66,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
           }}
           style={{ minWidth: 240 }}
         />
-        {["", "synthetic", "gelsight", "keyence", "plate"].map((t) => (
+        {["", "synthetic", "sensor", "keyence", "plate"].map((t) => (
           <button
             key={t || "all"}
             className={tag === t ? "btn-primary" : "btn-ghost"}
@@ -82,7 +82,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
       {error && <div className="callout warn">{error}</div>}
       {!scans.length && !error && (
         <div className="panel">
-          No scans yet. Import a GelSight folder, a Keyence .zag, or a height map — or load the demonstration set. The demonstration plate is synthetic and is not the stylus comparison.
+          No scans yet. Import a tactile sensor scan folder (.tmd/.yaml), a Keyence .zag, or a height map — or load the demonstration set. The demonstration plate is synthetic and is not the stylus comparison.
         </div>
       )}
       <div className="cards">
@@ -137,7 +137,7 @@ export function Library({ open, onChanged }: { open: (id: string) => void; onCha
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2 style={{ marginTop: 0 }}>Import</h2>
             <p className="lede">
-              A GelSight folder (scan.yaml, images, .tmd), a Keyence .zag, or a TIFF, PNG, CSV, or NPY height map. Pixel size is read from GelSight and Keyence files. For a bare height map, set it here. Heights in the file are interpreted in the unit you choose and stored as millimetres.
+              A tactile sensor scan folder (.tmd/.yaml), a Keyence .zag, or a TIFF, PNG, CSV, or NPY height map. Pixel size is read from the scan folder and from Keyence files. For a bare height map, set it here. Heights in the file are interpreted in the unit you choose and stored as millimetres.
             </p>
             <div className="row">
               <label className="field">

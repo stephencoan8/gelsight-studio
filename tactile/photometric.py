@@ -1,4 +1,4 @@
-"""GelSight quadratic photometric model.
+"""sensor quadratic photometric model.
 
 Decoded from the sensor calibration (``Calib-*.yaml`` + flat-field PNG), as
 used for the published full-resolution reconstruction::
@@ -158,7 +158,7 @@ def height_scale(camera_mmpp: float | None, scan_mmpp: float | None) -> float:
     return 1.0
 
 
-class GelSightCalib:
+class SensorCalib:
     """A parsed ``Calib-*.yaml`` plus its flat-field tiles, if the PNG is present."""
 
     def __init__(self, path: str | Path, flatfield_path: str | Path | None = None):
@@ -192,5 +192,5 @@ class GelSightCalib:
             "groove_depth_mm": self.groove_depth_mm,
             "groove_width_mm": self.groove_width_mm,
             "has_flatfield": self.flat_tiles is not None,
-            "model": "gelsight-quadfit",
+            "model": "quadfit",
         }

@@ -4,11 +4,11 @@ Reference balls are inset in a plate. Only the top cap is a sphere. Samples
 near the rim are masked, and a ball whose contact radius is below half its
 radius is dropped (there is not enough true geometry to use it).
 
-The photometric fit is the study's quadratic model: six lights, the GelSight
+The photometric fit is the study's quadratic model: six lights, the sensor
 spatial monomials, and ``phi(n)``. Flats are included as zero-slope samples
 with weight ``wflat`` (4 in the study), on the even 256-pixel blocks.
 
-This fit is a check. The reconstruction that matched the stylus uses GelSight's
+This fit is a check. The reconstruction that matched the stylus uses the sensor's
 own ``quadfit`` coefficients, not a refit, plus the two-parameter plate transfer.
 """
 
@@ -150,7 +150,7 @@ def ball_height_scale(z_mm: np.ndarray, distance_px: np.ndarray, radius_px: floa
 
 
 def parse_ball_targets(text: str) -> np.ndarray:
-    """Ball centres from a GelSight ``bgatarget.yaml``: ``(x, y, r)`` in pixels."""
+    """Ball centres from a sensor ``bgatarget.yaml``: ``(x, y, r)`` in pixels."""
     found = re.findall(r"\(([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", text)
     if not found:
         return np.zeros((0, 3))

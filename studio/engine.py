@@ -8,14 +8,14 @@ get mixed in the viewers.
 from __future__ import annotations
 
 import numpy as np
-from gelsight.defects import detect
-from gelsight.filters import apply_pipeline
-from gelsight.geometry import angle, area_volume, distance, polygon_mask, step_height
-from gelsight.holes import measure_holes
-from gelsight.measure import measure_grooves_auto
-from gelsight.profiles import mean_section, sample_at, sample_line, sections_along_path
-from gelsight.roughness import areal, profile
-from gelsight.transfer import apply_transfer
+from tactile.defects import detect
+from tactile.filters import apply_pipeline
+from tactile.geometry import angle, area_volume, distance, polygon_mask, step_height
+from tactile.holes import measure_holes
+from tactile.measure import measure_grooves_auto
+from tactile.profiles import mean_section, sample_at, sample_line, sections_along_path
+from tactile.roughness import areal, profile
+from tactile.transfer import apply_transfer
 
 
 def prepare(z_mm: np.ndarray, mmpp: float, view: dict | None) -> np.ndarray:

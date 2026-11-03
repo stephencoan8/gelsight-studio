@@ -68,7 +68,7 @@ def diameter_rules(radius_mm: np.ndarray, profile_um: np.ndarray, r25_mm: float,
     out["land_sag_um"] = land
     out["depth_um"] = None if depth_um is None else float(depth_um)
     out["r25_mm"] = float(r25_mm)
-    # The diameter the study recommends for GelSight.
+    # The diameter the study recommends for sensor.
     out["diameter_mm"] = out["loc25"]
     out["rule"] = "loc25"
     return out

@@ -51,7 +51,7 @@ export function Validation() {
           <div className="s">Leave-one-rotation-out vs stylus</div>
         </div>
         <div className="tile">
-          <div className="k">GelSight native TMD</div>
+          <div className="k">Native TMD</div>
           <div className="v">{data.native.id_loro_mean_sty.toFixed(2)}<small>µm</small></div>
           <div className="s">Same protocol, no extra transfer</div>
         </div>

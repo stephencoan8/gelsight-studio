@@ -61,7 +61,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
     <div className="page">
       <h1>Calibration</h1>
       <p className="lede">
-        One profile is one camera body and one gel. The reconstruction that matched the stylus uses GelSight’s own quadratic coefficients at full resolution, then a gain and an offset fit on the validation plate. A refit from the balls is available as a check. It is not the default model.
+        One profile is one camera body and one gel. The reconstruction that matched the stylus uses the sensor's own quadratic coefficients at full resolution, then a gain and an offset fit on the validation plate. A refit from the balls is available as a check. It is not the default model.
       </p>
       <div className="steps">
         {STEPS.map((s, i) => (
@@ -107,9 +107,9 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
 
       {step === 1 && (
         <div className="panel">
-          <h2>GelSight photometric model</h2>
+          <h2>Photometric model</h2>
           <p>
-            Import the <span className="mono">Calib-*.yaml</span> written by GelSight Mobile. The quadfit block is the model. Add the flat-field PNG only if you will reconstruct from the six raw images. Full resolution (no downsampling) is what the 0.88 µm figure refers to; a coarser reconstruction is a preview.
+            Import the <span className="mono">Calib-*.yaml</span> written by the sensor software. The quadfit block is the model. Add the flat-field PNG only if you will reconstruct from the six raw images. Full resolution (no downsampling) is what the 0.88 µm figure refers to; a coarser reconstruction is a preview.
           </p>
           {!cal && <p>Create a profile on the previous step first.</p>}
           {cal && (
@@ -152,7 +152,7 @@ export function CalibrationView({ onActive }: { onActive: () => void }) {
         <div className="panel">
           <h2>Reference balls are inset</h2>
           <p>
-            Only the top cap is a sphere. The fit keeps pixels inside the contact radius minus 0.05 R, and drops a ball whose contact is below 0.5 R. The rim, where the ball meets the plate, is not used. This check rebuilds a sphere of a known scale and recovers that scale. It does not replace GelSight’s coefficients.
+            Only the top cap is a sphere. The fit keeps pixels inside the contact radius minus 0.05 R, and drops a ball whose contact is below 0.5 R. The rim, where the ball meets the plate, is not used. This check rebuilds a sphere of a known scale and recovers that scale. It does not replace the sensor's coefficients.
           </p>
           <button
             className="btn-primary"

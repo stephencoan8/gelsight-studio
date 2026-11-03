@@ -1,10 +1,10 @@
 """The published accuracy numbers, recomputed from the stored per-scan table.
 
 ``reference/E00_GSQ_F1.json`` holds the six groove depths on Scan055–058
-(0/90/180/270) from GelSight's own coefficients at full resolution, after the
+(0/90/180/270) from the sensor's own coefficients at full resolution, after the
 height scale K. The transfer is fit here; the figures are not typed in.
 
-Native GelSight TMD per-scan depths were not retained, so the native row is
+Native sensor TMD per-scan depths were not retained, so the native row is
 the published leave-one-out summary from ``reference/transfer_cv.json``.
 Keyence versus stylus is the RMS of the high-magnification vector in the log.
 """
@@ -65,7 +65,7 @@ def validation_report() -> dict:
     go = report["models"]["gain+off"]
     return {
         "model": {
-            "name": "GelSight quadfit, full resolution, plate gain and offset",
+            "name": "sensor quadfit, full resolution, plate gain and offset",
             "photometric": "Calib quadfit Q, no slope clamp, Poisson DCT",
             "formula": f"t = {gain:.5f} · m + {offset:.3f} µm",
             "gain": gain,
@@ -106,7 +106,7 @@ def validation_report() -> dict:
             "id_loro_sty": native["id"]["loro_sty"],
             "id_mean4_sty": native["id"]["mean4_sty"],
             "gain_off_loro_mean_sty": native["gain+off"]["loro_mean_sty"],
-            "note": "GelSight's own TMD, single-scan leave-one-rotation-out, no extra transfer.",
+            "note": "the sensor's own TMD, single-scan leave-one-rotation-out, no extra transfer.",
         },
         "keyence": {
             "recomputed": True,

@@ -1,4 +1,4 @@
-"""GelSight Studio HTTP service.
+"""Surface Measurement HTTP service.
 
 Run with ``./run.sh``. The process binds to localhost unless ``STUDIO_HOST``
 is set. Scans stay in the data directory on this machine.
@@ -17,17 +17,17 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from gelsight import __version__
-from gelsight.benchmarks import validation_report
-from gelsight.colorize import colorize
-from gelsight.constants import KEYENCE_UM, STYLUS_UM
-from gelsight.fitcalib import ball_height_scale, cap_mask
-from gelsight.readers import write_stl, write_tiff
-from gelsight.register import align_and_diff
-from gelsight.report import build_pdf, height_png, measurements_csv
 from PIL import Image
 from studio.engine import compute, encode_preview, prepare
 from studio.store import ROOT, Store, sanitize
+from tactile import __version__
+from tactile.benchmarks import validation_report
+from tactile.colorize import colorize
+from tactile.constants import KEYENCE_UM, STYLUS_UM
+from tactile.fitcalib import ball_height_scale, cap_mask
+from tactile.readers import write_stl, write_tiff
+from tactile.register import align_and_diff
+from tactile.report import build_pdf, height_png, measurements_csv
 
 DIST = ROOT / "frontend" / "dist"
 
@@ -35,7 +35,7 @@ DIST = ROOT / "frontend" / "dist"
 def create_app() -> FastAPI:
     data = Path(os.environ.get("STUDIO_DATA", ROOT / "data"))
     store = Store(data)
-    app = FastAPI(title="GelSight Studio", version=__version__)
+    app = FastAPI(title="Surface Measurement", version=__version__)
     app.state.store = store
     app.add_middleware(
         CORSMiddleware,
@@ -286,7 +286,7 @@ def create_app() -> FastAPI:
             png.write_bytes(await flatfield.read())
             # adopt_yaml looks next to the yaml and at the modelfile name.
             # Point the yaml's sibling at the uploaded png if names differ.
-            from gelsight.photometric import load_flatfield
+            from tactile.photometric import load_flatfield
 
             try:
                 tiles = load_flatfield(png)
