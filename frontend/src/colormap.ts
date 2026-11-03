@@ -59,6 +59,13 @@ export function colorize(z: Float32Array, w: number, h: number, lo: number, hi: 
   const img = new ImageData(w, h);
   const d = img.data;
   for (let i = 0; i < z.length; i++) {
+    if (!Number.isFinite(z[i])) {
+      d[i * 4] = 24;
+      d[i * 4 + 1] = 28;
+      d[i * 4 + 2] = 34;
+      d[i * 4 + 3] = 255;
+      continue;
+    }
     const t = Math.min(1, Math.max(0, (z[i] - a) / (b - a)));
     const k = (t * 255) | 0;
     d[i * 4] = table[k * 3];

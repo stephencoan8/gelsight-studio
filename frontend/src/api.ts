@@ -39,6 +39,8 @@ export const compare = (body: unknown) => engine.compare(body as Parameters<type
 export const validation = () => engine.validation();
 export const reconstruct = (id: string, factor = 4) => engine.reconstruct(id, factor);
 export const onStatus = (cb: (s: string) => void) => engine.onStatus(cb);
+export const onHeightUpdated = (cb: (id: string) => void) => engine.onHeightUpdated(cb);
+export const upgradeHeight = (id: string) => engine.upgradeHeight(id);
 
 export async function downloadReport(id: string, fmt: string) {
   const { blob, filename } = await engine.reportBlob(id, fmt);

@@ -8,6 +8,7 @@ import { readHeightFile, readZag, readZip, writeCsv, writeNpy, writeStl, writeTi
 import { alignAndDiff } from "./num/register";
 import { applyView, compute, type ViewOpts } from "./num/tools";
 import { evaluateTransfer } from "./num/transfer";
+import { nativeField } from "./num/field";
 import { perScanTable, validationReport } from "./num/validationReport";
 import { decodePng, pngDataUrl, toBase64 } from "./num/png";
 import { colorize } from "./num/color";
@@ -55,45 +56,13 @@ async function thumbOf(z: Float32Array, rows: number, cols: number): Promise<str
   return pngDataUrl(t.rgb, t.width, t.height);
 }
 
-function preview(zMm: Float32Array, rows: number, cols: number, mmpp: number): Field {
-  const factor = Math.max(1, Math.ceil(Math.max(rows, cols) / 640));
-  const h = Math.floor(rows / factor);
-  const w = Math.floor(cols / factor);
-  const out = new Float32Array(w * h);
-  let zmin = Infinity;
-  let zmax = -Infinity;
-  let sum = 0;
-  let n = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0;
-      let c = 0;
-      for (let dy = 0; dy < factor; dy++) {
-        for (let dx = 0; dx < factor; dx++) {
-          const v = zMm[(y * factor + dy) * cols + (x * factor + dx)];
-          if (Number.isFinite(v)) {
-            s += v;
-            c++;
-          }
-        }
-      }
-      const um = c ? (s / c) * 1e3 : NaN;
-      out[y * w + x] = um;
-      if (Number.isFinite(um)) {
-        zmin = Math.min(zmin, um);
-        zmax = Math.max(zmax, um);
-        sum += um;
-        n++;
-      }
-    }
-  }
-  const mean = n ? sum / n : 0;
-  if (!n) {
-    zmin = 0;
-    zmax = 1;
-  }
-  for (let i = 0; i < out.length; i++) if (!Number.isFinite(out[i])) out[i] = mean;
-  return { w, h, fullW: cols, fullH: rows, previewMmpp: mmpp * factor, fullMmpp: mmpp, z: out, zmin, zmax };
+const heightListeners = new Set<(id: string) => void>();
+export function onHeightUpdated(cb: (id: string) => void) {
+  heightListeners.add(cb);
+  return () => heightListeners.delete(cb);
+}
+function notifyHeight(id: string) {
+  for (const cb of heightListeners) cb(id);
 }
 
 async function addMap(spec: {
@@ -187,8 +156,11 @@ export async function seedDemo() {
 export async function loadField(id: string, view: Partial<ViewOpts>): Promise<Field> {
   const scan = await getScan(id);
   const height = await db.loadHeight(id);
+  const filters = (view.median_px ?? 0) > 1 || (view.gaussian_mm ?? 0) > 0 || (view.form_mm ?? 0) > 0;
+  const leveled = view.level && view.level !== "none";
+  if (!filters && !leveled) return nativeField(height, scan.height, scan.width, scan.mmpp);
   const prepared = applyView(Float64Array.from(height), scan.height, scan.width, scan.mmpp, view);
-  return preview(Float32Array.from(prepared), scan.height, scan.width, scan.mmpp);
+  return nativeField(prepared, scan.height, scan.width, scan.mmpp);
 }
 
 async function activePlate(): Promise<{ gain: number; offset_um: number; name: string } | null> {
@@ -651,6 +623,7 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
   let mmpp = doc.mmpp || 0.0069;
   let notes = "";
   let needs = false;
+  let preparedFull: PreparedRecon | null = null;
   if (tmd) {
     const map = await readHeightFile(tmd.rel, new Uint8Array(await tmd.file.arrayBuffer()), mmpp, "mm");
     z = map.z;
@@ -659,13 +632,15 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
     mmpp = map.mmpp || mmpp;
     notes = map.notes || "";
   } else if (images.length >= 6) {
-    const rebuilt = await reconstructFolder(images, siblings, doc);
-    if (rebuilt) {
+    const prepared = await prepareReconstruction(images, siblings, doc);
+    const rebuilt = prepared ? await reconstructImages({ ...prepared, factor: 4 }) : null;
+    if (rebuilt && prepared) {
       z = rebuilt.z;
       rows = rebuilt.rows;
       cols = rebuilt.cols;
       mmpp = rebuilt.mmpp;
-      notes = "Height reconstructed from the six images and the calibration in this folder.";
+      notes = "Preview height. Full resolution follows.";
+      preparedFull = prepared;
     } else {
       const first = await decodeImage(images[0].file);
       rows = first.h;
@@ -708,18 +683,42 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
       height_file: doc.active ?? null,
       normal_map: doc.normal ?? null,
       calib: doc.calib ?? null,
+      reconstructed: preparedFull ? { factor: 4, k: preparedFull.k } : undefined,
     },
     photo,
   });
   if (raw) await db.saveRaw(scan.id, raw);
+  if (preparedFull) {
+    await db.putCalibData(scan.id, {
+      quad: preparedFull.quad,
+      scale: preparedFull.scale,
+      flatH: preparedFull.flatH,
+      flatW: preparedFull.flatW,
+      flat: preparedFull.flat,
+    });
+    void finishFullResolution(scan.id, preparedFull);
+  }
   return scan;
 }
 
-async function reconstructFolder(
+type PreparedRecon = {
+  images: Float32Array;
+  height: number;
+  width: number;
+  quad: Float64Array;
+  flat: Float32Array;
+  flatH: number;
+  flatW: number;
+  scale: Float64Array;
+  mmpp: number;
+  k: number;
+};
+
+async function prepareReconstruction(
   images: { file: File }[],
   siblings: { file: File; rel: string }[],
   doc: { mmpp?: number; calib?: string },
-): Promise<{ z: Float32Array; rows: number; cols: number; mmpp: number } | null> {
+): Promise<PreparedRecon | null> {
   const byName = new Map(siblings.map((s) => [s.rel.split("/").pop()!.toLowerCase(), s]));
   const calibName = doc.calib?.split(/[/\\]/).pop()?.toLowerCase();
   const calibFile = (calibName && byName.get(calibName)) || siblings.find((s) => /^calib-.*\.ya?ml$/i.test(s.rel.split("/").pop() || ""));
@@ -742,20 +741,75 @@ async function reconstructFolder(
   }
   const scanMmpp = doc.mmpp || parsed.mmpp || 0.0069;
   const k = parsed.mmpp && scanMmpp ? parsed.mmpp / scanMmpp : 1;
-  const out = await reconstructImages({
+  return { images: frames, height, width, quad: parsed.quad, flat: tiles.data, flatH: tiles.fh, flatW: tiles.fw, scale: parsed.scale, mmpp: scanMmpp, k };
+}
+
+const upgrading = new Set<string>();
+
+async function finishFullResolution(id: string, prepared: PreparedRecon) {
+  if (upgrading.has(id)) return;
+  upgrading.add(id);
+  try {
+    status("Full resolution");
+    const out = await reconstructImages({
+      ...prepared,
+      factor: 1,
+      onProgress: (label, frac) => status(`${label} ${Math.round(frac * 100)}%`),
+    });
+    const scan = await getScan(id);
+    await db.saveHeight(id, out.z);
+    await db.putScan({
+      ...scan,
+      width: out.cols,
+      height: out.rows,
+      mmpp: out.mmpp,
+      fov_mm: [out.cols * out.mmpp, out.rows * out.mmpp],
+      notes: "Full-resolution height from the six images and the calibration in this folder.",
+      meta: {
+        ...scan.meta,
+        reconstructed: {
+          ...(typeof scan.meta.reconstructed === "object" && scan.meta.reconstructed ? scan.meta.reconstructed : {}),
+          factor: 1,
+          mmpp: out.mmpp,
+        },
+      },
+    });
+    notifyHeight(id);
+  } catch (err) {
+    status(err instanceof Error ? err.message : "full resolution failed");
+  } finally {
+    upgrading.delete(id);
+    status("");
+  }
+}
+
+export async function upgradeHeight(id: string) {
+  if (upgrading.has(id)) return;
+  const scan = await getScan(id);
+  const factor = (scan.meta.reconstructed as { factor?: number } | undefined)?.factor;
+  if (factor === 1) return;
+  const data = await db.getCalibData(id);
+  const raw = await db.loadRaw(id);
+  if (!data?.quad || !data.flat || !data.flatH || !data.flatW || !data.scale || !raw) return;
+  const reduced = (factor != null && factor > 1) || raw.width > scan.width || raw.height > scan.height;
+  if (!reduced) return;
+  const frames = new Float32Array(raw.data.length);
+  const denom = raw.depth === 16 ? 65535 : 255;
+  for (let i = 0; i < frames.length; i++) frames[i] = raw.data[i] / denom;
+  const sensor = Number(scan.meta.sensor_mmpp || scan.mmpp);
+  const k = (scan.meta.reconstructed as { k?: number } | undefined)?.k ?? 1;
+  await finishFullResolution(id, {
     images: frames,
-    height,
-    width,
-    quad: parsed.quad,
-    flat: tiles.data,
-    flatH: tiles.fh,
-    flatW: tiles.fw,
-    scale: parsed.scale,
-    mmpp: scanMmpp,
+    height: raw.height,
+    width: raw.width,
+    quad: data.quad,
+    flat: data.flat,
+    flatH: data.flatH,
+    flatW: data.flatW,
+    scale: data.scale,
+    mmpp: sensor,
     k,
-    factor: 4,
   });
-  return out;
 }
 
 async function fileToDataUrl(file: File): Promise<string | undefined> {

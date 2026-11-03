@@ -115,15 +115,25 @@ export function fitAnnulus(z: ArrayLike<number>, cols: number, rows: number, inn
   }
   if (ref.length < terms.length) throw new Error("the frame between the boxes needs more points than the polynomial");
   if (!feat.length) throw new Error("inner box has no samples");
-  const stride = Math.max(1, Math.floor(Math.sqrt(ref.length / 2500)));
-  const used = ref.filter((_, k) => k % stride === 0);
-  const A = used.map((i) => {
+  const nT = terms.length;
+  const ata = Array.from({ length: nT }, () => new Float64Array(nT));
+  const atb = new Float64Array(nT);
+  for (const i of ref) {
     const y = Math.floor(i / cols);
     const x = i - y * cols;
-    return basis2((2 * (x - ox0)) / spanX - 1, (2 * (y - oy0)) / spanY - 1, terms);
-  });
-  const b = used.map((i) => z[i]);
-  const coef = lstsq(A, b, 1e-10);
+    const row = basis2((2 * (x - ox0)) / spanX - 1, (2 * (y - oy0)) / spanY - 1, terms);
+    const val = z[i];
+    for (let j = 0; j < nT; j++) {
+      atb[j] += row[j] * val;
+      for (let k = j; k < nT; k++) ata[j][k] += row[j] * row[k];
+    }
+  }
+  const normal = ata.map((row) => Array.from(row));
+  for (let j = 0; j < nT; j++) {
+    for (let k = 0; k < j; k++) normal[j][k] = normal[k][j];
+    normal[j][j] += 1e-10;
+  }
+  const coef = solveSquare(normal, Array.from(atb));
   let min = Infinity;
   let max = -Infinity;
   let sum = 0;
@@ -138,7 +148,25 @@ export function fitAnnulus(z: ArrayLike<number>, cols: number, rows: number, inn
     sum += d;
     n++;
   }
-  return { order, min, max, mean: sum / n, nReference: used.length, nFeature: n };
+  return { order, min, max, mean: sum / n, nReference: ref.length, nFeature: n };
+}
+
+function solveSquare(a: number[][], b: number[]): number[] {
+  const n = b.length;
+  const m = a.map((row, i) => [...row, b[i]]);
+  for (let k = 0; k < n; k++) {
+    let piv = k;
+    for (let i = k + 1; i < n; i++) if (Math.abs(m[i][k]) > Math.abs(m[piv][k])) piv = i;
+    [m[k], m[piv]] = [m[piv], m[k]];
+    const div = m[k][k] || 1e-18;
+    for (let j = k; j <= n; j++) m[k][j] /= div;
+    for (let i = 0; i < n; i++) {
+      if (i === k) continue;
+      const f = m[i][k];
+      for (let j = k; j <= n; j++) m[i][j] -= f * m[k][j];
+    }
+  }
+  return m.map((row) => row[n]);
 }
 
 function dot(a: number[], b: number[]): number {

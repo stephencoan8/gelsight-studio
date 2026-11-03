@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { loadField } from "../api";
+import { loadField, onHeightUpdated, upgradeHeight } from "../api";
 import { HeightMap } from "../components/HeightMap";
 import { ProfilePlot } from "../components/ProfilePlot";
+import { sampleLine } from "../num/field";
 import { fitAnnulus, fitProfile, type AnnulusFit, type ProfileFit } from "../num/fit";
 import type { Cursor, Field, Measurement, Tool } from "../types";
 
@@ -18,6 +19,7 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
   const [inner, setInner] = useState<number[] | null>(null);
   const [outer, setOuter] = useState<number[] | null>(null);
   const [scratch, setScratch] = useState<AnnulusFit | null>(null);
+  const [pixel, setPixel] = useState(false);
 
   useEffect(() => {
     setLine([]);
@@ -26,7 +28,12 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
     setInner(null);
     setOuter(null);
     setScratch(null);
-    loadField(scanId, EMPTY_VIEW).then(setField).catch((e: Error) => setError(e.message));
+    let live = true;
+    const reload = () => loadField(scanId, EMPTY_VIEW).then((f) => { if (live) setField(f); }).catch((e: Error) => setError(e.message));
+    reload();
+    upgradeHeight(scanId).catch(() => undefined);
+    const stop = onHeightUpdated((id) => { if (id === scanId) reload(); });
+    return () => { live = false; stop(); };
   }, [scanId]);
 
   const profile = field && line.length === 2 ? sampleProfile(field, line[0], line[1]) : null;
@@ -69,6 +76,8 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
         <button className={workflow === "offset" ? "tool active" : "tool"} onClick={() => setWorkflow("offset")}>Offset</button>
         <button className={workflow === "scratch" ? "tool active" : "tool"} onClick={() => setWorkflow("scratch")}>Scratch</button>
         <button className="btn" onClick={() => { setLine([]); setMarks([]); setProfileFit(null); setInner(null); setOuter(null); setScratch(null); setError(null); }}>Clear</button>
+        <button className={pixel ? "tool active" : "tool"} onClick={() => setPixel((p) => !p)}>{pixel ? "Fit" : "1:1"}</button>
+        {field && <span className="mono">{field.w}×{field.h}</span>}
       </div>
       {field && (
         <HeightMap
@@ -85,6 +94,7 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
             setLine((pts) => [...pts, { x, y }]);
             setProfileFit(null);
           }}
+          pixelPerfect={pixel}
           onRect={(x0, y0, x1, y1) => {
             if (workflow !== "scratch") return;
             const rect = [x0, y0, x1, y1];
@@ -144,21 +154,8 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
 }
 
 function sampleProfile(field: Field, a: { x: number; y: number }, b: { x: number; y: number }) {
-  const m = field.previewMmpp;
-  const length = Math.hypot(b.x - a.x, b.y - a.y);
-  const n = Math.max(2, Math.round(length / m) + 1);
-  const distance: number[] = [];
-  const height: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    const x = a.x + (b.x - a.x) * t;
-    const y = a.y + (b.y - a.y) * t;
-    const c = Math.round(x / m - 0.5);
-    const r = Math.round(y / m - 0.5);
-    distance.push(length * t);
-    height.push(r >= 0 && c >= 0 && r < field.h && c < field.w ? field.z[r * field.w + c] : NaN);
-  }
-  return { distance, height, length };
+  const sampled = sampleLine(field.z, field.w, field.h, a.x, a.y, b.x, b.y, field.previewMmpp);
+  return { ...sampled, length: Math.hypot(b.x - a.x, b.y - a.y) };
 }
 
 function pairZones(marks: number[]): [number, number][] {
