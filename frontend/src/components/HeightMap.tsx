@@ -17,6 +17,7 @@ export function HeightMap({
   onClick,
   onRect,
   pixelPerfect,
+  backdrop,
 }: {
   field: Field;
   cmap: Cmap;
@@ -31,6 +32,8 @@ export function HeightMap({
   onRect: (x0: number, y0: number, x1: number, y1: number) => void;
   /** One stored sample equals one device pixel. */
   pixelPerfect?: boolean;
+  /** Full-grid photograph. Null shows the height colours. */
+  backdrop?: ImageData | null;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLCanvasElement>(null);
@@ -116,18 +119,23 @@ export function HeightMap({
   }
 
   useEffect(() => {
-    const [lo, hi] = limitsOf(field, symmetric);
-    const image = colorize(field.z, field.w, field.h, lo, hi, cmap, false);
     const c = document.createElement("canvas");
     c.width = field.w;
     c.height = field.h;
-    c.getContext("2d")?.putImageData(image, 0, 0);
+    const ctx = c.getContext("2d");
+    if (backdrop && backdrop.width === field.w && backdrop.height === field.h) {
+      ctx?.putImageData(backdrop, 0, 0);
+    } else {
+      const [lo, hi] = limitsOf(field, symmetric);
+      const image = colorize(field.z, field.w, field.h, lo, hi, cmap, false);
+      ctx?.putImageData(image, 0, 0);
+    }
     off.current = c;
     if (pixelPerfect) oneToOne();
     else fit();
     // fit() paints. Re-run when the field or the colour scale changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field, cmap, symmetric, pixelPerfect]);
+  }, [field, cmap, symmetric, pixelPerfect, backdrop]);
 
   useEffect(() => {
     paint();

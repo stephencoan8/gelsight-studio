@@ -52,5 +52,5 @@ export function colorize(z: Float32Array | Float64Array, rows: number, cols: num
 
 export function thumbnail(zMm: Float32Array, rows: number, cols: number, maxDim = 280): { rgb: Uint8Array; width: number; height: number } {
   const um = Float64Array.from(zMm, (v) => v * 1e3);
-  return colorize(um, rows, cols, "turbo", false, maxDim);
+  return colorize(um, rows, cols, "height", false, maxDim);
 }

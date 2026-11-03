@@ -30,9 +30,43 @@ function coolwarm(t: number): [number, number, number] {
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
-export type Cmap = "turbo" | "gray" | "coolwarm";
+/** Altitude ramp in the published order blue → cyan → green → yellow → red, with saturation pulled down so a high surface is not neon. */
+const ALTITUDE: [number, [number, number, number]][] = [
+  [0, [0, 0, 161]],
+  [0.18, [0, 70, 252]],
+  [0.36, [0, 210, 246]],
+  [0.54, [64, 253, 195]],
+  [0.72, [164, 255, 93]],
+  [0.88, [232, 255, 29]],
+  [1, [248, 220, 40]],
+];
 
-const FNS = { turbo, gray, coolwarm };
+function mute([r, g, b]: [number, number, number], sat = 0.58): [number, number, number] {
+  const R = r / 255;
+  const G = g / 255;
+  const B = b / 255;
+  const y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  const ch = (c: number) => Math.round(Math.min(1, Math.max(0, y + (c - y) * sat)) * 255);
+  return [ch(R), ch(G), ch(B)];
+}
+
+function height(t: number): [number, number, number] {
+  const x = Math.min(1, Math.max(0, t));
+  let i = 1;
+  while (i < ALTITUDE.length && ALTITUDE[i][0] < x) i++;
+  const [t0, c0] = ALTITUDE[i - 1];
+  const [t1, c1] = ALTITUDE[Math.min(ALTITUDE.length - 1, i)];
+  const u = t1 === t0 ? 0 : (x - t0) / (t1 - t0);
+  return mute([
+    c0[0] + (c1[0] - c0[0]) * u,
+    c0[1] + (c1[1] - c0[1]) * u,
+    c0[2] + (c1[2] - c0[2]) * u,
+  ]);
+}
+
+export type Cmap = "turbo" | "gray" | "coolwarm" | "height";
+
+const FNS = { turbo, gray, coolwarm, height };
 
 export function lut(name: Cmap): Uint8Array {
   const out = new Uint8Array(256 * 3);

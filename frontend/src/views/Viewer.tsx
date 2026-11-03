@@ -16,7 +16,7 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
   const [items, setItems] = useState<Measurement[]>([]);
   const [tool, setTool] = useState<Tool>("navigate");
   const [mode, setMode] = useState<"map" | "3d" | "split">("split");
-  const [cmap, setCmap] = useState<"turbo" | "gray" | "coolwarm">("turbo");
+  const [cmap, setCmap] = useState<"height" | "turbo" | "gray" | "coolwarm">("height");
   const [exag, setExag] = useState(12);
   const [draft, setDraft] = useState<{ x: number; y: number }[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -247,6 +247,7 @@ export function Viewer({ scanId, onCursor }: { scanId: string; onCursor: (c: Cur
         )}
         {recon && <span className="mono" style={{ color: "var(--muted)" }}>{recon}</span>}
         <select value={cmap} onChange={(e) => setCmap(e.target.value as typeof cmap)} aria-label="Colour map">
+          <option value="height">Height</option>
           <option value="turbo">Turbo</option>
           <option value="gray">Grey</option>
           <option value="coolwarm">Diverging</option>
@@ -445,7 +446,7 @@ function Editor({ m, onChange, onDelete }: { m: Measurement; onChange: (b: Recor
   );
 }
 
-function Colorbar({ lo, hi, cmap }: { lo: number; hi: number; cmap: "turbo" | "gray" | "coolwarm" }) {
+function Colorbar({ lo, hi, cmap }: { lo: number; hi: number; cmap: "height" | "turbo" | "gray" | "coolwarm" }) {
   const ref = useState<HTMLCanvasElement | null>(null);
   // draw via ref callback
   return (
@@ -458,7 +459,7 @@ function Colorbar({ lo, hi, cmap }: { lo: number; hi: number; cmap: "turbo" | "g
           const ctx = node.getContext("2d");
           if (!ctx) return;
           const g = ctx.createLinearGradient(0, 256, 0, 0);
-          const stops = cmap === "coolwarm" ? ["#3a5f9e", "#f4f4f4", "#b94a48"] : cmap === "gray" ? ["#111", "#eee"] : ["#1b2a6b", "#2ec4b6", "#f7e34a", "#d62728"];
+          const stops = cmap === "coolwarm" ? ["#3a5f9e", "#f4f4f4", "#b94a48"] : cmap === "gray" ? ["#111", "#eee"] : cmap === "turbo" ? ["#1b2a6b", "#2ec4b6", "#f7e34a", "#d62728"] : ["#3d4f73", "#6fbfb4", "#d5d48a", "#c6b15a"];
           stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c));
           ctx.fillStyle = g;
           ctx.fillRect(0, 0, 12, 256);

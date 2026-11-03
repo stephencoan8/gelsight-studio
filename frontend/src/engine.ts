@@ -3,7 +3,7 @@
 import { ballHeightScale, capMask, parseCalibYaml, parseScanYaml, splitFlatfield } from "./num/calib";
 import { thumbnail } from "./num/color";
 import { KEYENCE_UM, STYLUS_UM } from "./num/constants";
-import { coupon, shiftedCopy, validationPlate } from "./num/demo";
+import { coupon, reliefFrames, shiftedCopy, validationPlate } from "./num/demo";
 import { readHeightFile, readZag, readZip, writeCsv, writeNpy, writeStl, writeTiff } from "./num/io";
 import { alignAndDiff } from "./num/register";
 import { applyView, compute, type ViewOpts } from "./num/tools";
@@ -137,7 +137,7 @@ export async function seedDemo() {
   const step = coupon();
   const scans = [];
   for (const spec of [plate, shifted, step]) {
-    scans.push(await addMap({
+    const scan = await addMap({
       name: spec.name,
       z: Float32Array.from(spec.z),
       rows: spec.rows,
@@ -148,9 +148,32 @@ export async function seedDemo() {
       notes: spec.notes,
       project: "Demonstration",
       meta: { synthetic: true },
-    }));
+    });
+    if (spec === plate) {
+      await db.saveRaw(scan.id, {
+        width: spec.cols,
+        height: spec.rows,
+        depth: 16,
+        data: reliefFrames(spec.z, spec.rows, spec.cols, spec.mmpp),
+      });
+    }
+    scans.push(scan);
   }
   return { scans, calibration, already: false };
+}
+
+export async function loadFrames(id: string): Promise<{ width: number; height: number; depth: number; planes: Uint16Array[] } | null> {
+  const raw = await db.loadRaw(id);
+  if (!raw) return null;
+  const n = raw.width * raw.height;
+  if (raw.data.length < n * 6) return null;
+  const planes: Uint16Array[] = [];
+  for (let k = 0; k < 6; k++) {
+    const plane = new Uint16Array(n);
+    for (let i = 0; i < n; i++) plane[i] = raw.data[i * 6 + k];
+    planes.push(plane);
+  }
+  return { width: raw.width, height: raw.height, depth: raw.depth, planes };
 }
 
 export async function loadField(id: string, view: Partial<ViewOpts>): Promise<Field> {
@@ -501,7 +524,7 @@ export async function exportBlob(id: string, fmt: string, decimate = 4): Promise
   if (fmt === "stl") return { blob: bytesBlob(writeStl(z, scan.height, scan.width, scan.mmpp, decimate), "model/stl"), filename: `${safe}.stl` };
   if (fmt === "csv") return { blob: new Blob([writeCsv(z, scan.height, scan.width, scan.mmpp)], { type: "text/csv" }), filename: `${safe}.csv` };
   if (fmt === "png") {
-    const painted = colorize(Float32Array.from(z, (v) => v * 1e3), scan.height, scan.width, "turbo", false);
+    const painted = colorize(Float32Array.from(z, (v) => v * 1e3), scan.height, scan.width, "height", false);
     const png = await encodePngRGB(painted.rgb, painted.width, painted.height);
     return { blob: bytesBlob(png, "image/png"), filename: `${safe}.png` };
   }
@@ -654,7 +677,7 @@ async function importSensorScan(yamlFile: File, siblings: { file: File; rel: str
   let photo: string | undefined = thumb ? await fileToDataUrl(thumb.file) : undefined;
   let raw: { depth: number; width: number; height: number; data: Uint16Array } | undefined;
   if (!photo && images[0]) photo = await photoOf(await decodeImage(images[0].file));
-  if (!tmd && images.length >= 6) {
+  if (images.length >= 6) {
     const planes = [];
     for (const image of images.slice(0, 6)) planes.push(await decodeImage(image.file));
     const w = planes[0].w;

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { loadField, onHeightUpdated, upgradeHeight } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { loadField, loadFrames, onHeightUpdated, upgradeHeight } from "../api";
 import { HeightMap } from "../components/HeightMap";
 import { ProfilePlot } from "../components/ProfilePlot";
 import { sampleLine } from "../num/field";
@@ -20,6 +20,8 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
   const [outer, setOuter] = useState<number[] | null>(null);
   const [scratch, setScratch] = useState<AnnulusFit | null>(null);
   const [pixel, setPixel] = useState(false);
+  const [channel, setChannel] = useState(0);
+  const [frames, setFrames] = useState<{ width: number; height: number; depth: number; planes: Uint16Array[] } | null>(null);
 
   useEffect(() => {
     setLine([]);
@@ -29,8 +31,11 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
     setOuter(null);
     setScratch(null);
     let live = true;
+    setChannel(0);
+    setFrames(null);
     const reload = () => loadField(scanId, EMPTY_VIEW).then((f) => { if (live) setField(f); }).catch((e: Error) => setError(e.message));
     reload();
+    loadFrames(scanId).then((f) => { if (live) { setFrames(f); if (f) setChannel(1); } }).catch(() => undefined);
     upgradeHeight(scanId).catch(() => undefined);
     const stop = onHeightUpdated((id) => { if (id === scanId) reload(); });
     return () => { live = false; stop(); };
@@ -66,6 +71,11 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
     }
   }
 
+  const backdrop = useMemo(() => {
+    if (!field || !frames || channel < 1) return null;
+    return grayImage(frames.planes[channel - 1], frames.width, frames.height, frames.depth, field.w, field.h);
+  }, [field, frames, channel]);
+
   const marksReady = zones.length >= 1;
   const tool: Tool = workflow === "scratch" && (!inner || !outer) ? "area" : workflow === "offset" && line.length < 2 ? "profile" : "navigate";
   const overlays = overlaysOf(line, inner, outer);
@@ -78,11 +88,21 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
         <button className="btn" onClick={() => { setLine([]); setMarks([]); setProfileFit(null); setInner(null); setOuter(null); setScratch(null); setError(null); }}>Clear</button>
         <button className={pixel ? "tool active" : "tool"} onClick={() => setPixel((p) => !p)}>{pixel ? "Fit" : "1:1"}</button>
         {field && <span className="mono">{field.w}×{field.h}</span>}
+        {frames && (
+          <>
+            <span className="sep" />
+            <button className="tool" aria-label="Previous" onClick={() => setChannel((c) => (c <= 1 ? 6 : c - 1))}>−</button>
+            <span className="mono">{channel === 0 ? "Z" : channel}</span>
+            <button className="tool" aria-label="Next" onClick={() => setChannel((c) => (c === 0 || c >= 6 ? 1 : c + 1))}>+</button>
+            <button className={channel === 0 ? "tool active" : "tool"} onClick={() => setChannel(0)}>Map</button>
+          </>
+        )}
       </div>
       {field && (
         <HeightMap
           field={field}
-          cmap="turbo"
+          cmap="height"
+          backdrop={backdrop}
           measurements={overlays}
           selected={null}
           draft={workflow === "offset" ? line : []}
@@ -151,6 +171,25 @@ export function Surface({ scanId, onCursor }: { scanId: string; onCursor: (c: Cu
       )}
     </div>
   );
+}
+
+function grayImage(samples: Uint16Array, srcW: number, srcH: number, depth: number, w: number, h: number): ImageData {
+  const img = new ImageData(w, h);
+  const denom = depth === 16 ? 65535 : 255;
+  const d = img.data;
+  for (let y = 0; y < h; y++) {
+    const sy = srcH === h ? y : Math.min(srcH - 1, Math.floor((y + 0.5) * srcH / h));
+    for (let x = 0; x < w; x++) {
+      const sx = srcW === w ? x : Math.min(srcW - 1, Math.floor((x + 0.5) * srcW / w));
+      const v = Math.round((samples[sy * srcW + sx] / denom) * 255);
+      const o = (y * w + x) * 4;
+      d[o] = v;
+      d[o + 1] = v;
+      d[o + 2] = v;
+      d[o + 3] = 255;
+    }
+  }
+  return img;
 }
 
 function sampleProfile(field: Field, a: { x: number; y: number }, b: { x: number; y: number }) {
