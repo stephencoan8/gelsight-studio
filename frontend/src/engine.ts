@@ -96,7 +96,8 @@ async function addMap(spec: {
     thumb: await thumbOf(spec.z, spec.rows, spec.cols),
     photo: spec.photo,
   };
-  await db.saveHeight(id, spec.z);
+  const stored = await db.saveHeight(id, spec.z);
+  if (!stored) scan.notes = `${scan.notes} Kept for this session only.`.trim();
   await db.putScan(scan);
   return scan;
 }
