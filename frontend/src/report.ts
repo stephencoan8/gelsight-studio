@@ -50,12 +50,14 @@ function linesOf(m: Measurement): string[] {
   return out;
 }
 
-export function buildPdf(scan: Scan, measurements: Measurement[]): Uint8Array {
+export function buildPdf(scan: Scan, measurements: Measurement[], report?: { device?: string; gel?: string; notes?: string }): Uint8Array {
   const text = [
     "Surface Measurement",
     scan.name,
     `${scan.source}   ${scan.width} x ${scan.height}   ${scan.mmpp} mm/px`,
-    scan.notes || "",
+    report?.device ? `Device ${report.device}` : "",
+    report?.gel ? `Gel ${report.gel}` : "",
+    report?.notes || scan.notes || "",
     "",
     ...measurements.flatMap((m) => [...linesOf(m), ""]),
   ].filter((line, i, all) => line.length || all[i - 1] !== "");

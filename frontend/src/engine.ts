@@ -212,6 +212,92 @@ export async function measurements(id: string) {
   return db.measurementsOf(id);
 }
 
+export interface DisplaySettings {
+  xyUnit: "nm" | "um" | "mm" | "in";
+  zUnit: "nm" | "um" | "mm" | "in";
+  deviceSerial: string;
+  gelSerial: string;
+  reportNotes: string;
+  snap: boolean;
+  snapVertices: boolean;
+  perpendicular: boolean;
+  confirmDelete: boolean;
+  scaleBars: boolean;
+  crosshairs: boolean;
+  gridLines: boolean;
+  cursorFromCenter: boolean;
+  shapeLabels: boolean;
+}
+
+export const DEFAULT_DISPLAY: DisplaySettings = {
+  xyUnit: "mm",
+  zUnit: "um",
+  deviceSerial: "",
+  gelSerial: "",
+  reportNotes: "",
+  snap: true,
+  snapVertices: true,
+  perpendicular: false,
+  confirmDelete: true,
+  scaleBars: true,
+  crosshairs: true,
+  gridLines: false,
+  cursorFromCenter: true,
+  shapeLabels: true,
+};
+
+export async function displaySettings(): Promise<DisplaySettings> {
+  try {
+    const stored = await db.getSetting("display");
+    if (stored && typeof stored === "object") return { ...DEFAULT_DISPLAY, ...(stored as Partial<DisplaySettings>) };
+  } catch {
+    /* keep the defaults for this session */
+  }
+  return DEFAULT_DISPLAY;
+}
+
+export async function saveDisplaySettings(next: DisplaySettings): Promise<boolean> {
+  try {
+    await db.setSetting("display", next);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadSurfaceItems(scanId: string): Promise<unknown[]> {
+  const rows = await db.measurementsOf(scanId);
+  return rows
+    .filter((row) => row.kind === "offset" || row.kind === "scratch" || row.kind === "ruler")
+    .map((row) => (row.geometry as { item?: unknown }).item)
+    .filter(Boolean);
+}
+
+export async function saveSurfaceItems(scanId: string, items: { id: string; kind: string; name: string; result: Record<string, unknown>; item: unknown }[]): Promise<boolean> {
+  const existing = await db.measurementsOf(scanId);
+  const keep = new Set(items.map((item) => item.id));
+  for (const row of existing) {
+    if ((row.kind === "offset" || row.kind === "scratch" || row.kind === "ruler") && !keep.has(row.id)) await db.removeMeasurement(row.id);
+  }
+  const view = { level: "none" as const, poly_deg: 4, gaussian_mm: 0, median_px: 0, form_mm: 0 };
+  let ok = true;
+  for (const item of items) {
+    const stored = await db.putMeasurement({
+      id: item.id,
+      scan_id: scanId,
+      kind: item.kind,
+      name: item.name,
+      params: {},
+      geometry: { item: item.item },
+      result: item.result,
+      view,
+      created: new Date().toISOString(),
+    });
+    ok = ok && stored;
+  }
+  return ok;
+}
+
 async function runMeasure(scan: db.ScanRecord, body: { kind: string; params?: Record<string, unknown>; geometry?: Record<string, unknown>; view?: ViewOpts }) {
   const height = await db.loadHeight(scan.id);
   const view = body.view || { level: "none" as const, poly_deg: 4, gaussian_mm: 0, median_px: 0, form_mm: 0 };
@@ -513,7 +599,10 @@ export async function reportBlob(id: string, fmt: string): Promise<{ blob: Blob;
     const body = JSON.stringify({ scan, measurements: meas, plate: await activePlate() }, null, 2);
     return { blob: new Blob([body], { type: "application/json" }), filename: `${safe}.json` };
   }
-  if (fmt === "pdf") return { blob: bytesBlob(buildPdf(scan, meas), "application/pdf"), filename: `${safe}.pdf` };
+  if (fmt === "pdf") {
+    const display = await displaySettings();
+    return { blob: bytesBlob(buildPdf(scan, meas, { device: display.deviceSerial, gel: display.gelSerial, notes: display.reportNotes || scan.notes }), "application/pdf"), filename: `${safe}.pdf` };
+  }
   throw new Error("format is pdf, csv, or json");
 }
 
