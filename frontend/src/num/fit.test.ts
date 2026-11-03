@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitAnnulus, fitProfile } from "./fit";
+import { fitAnnulus, fitLevels, fitProfile } from "./fit";
 
 describe("shared surface fit", () => {
   it("reads a known offset from a profile once the reference zones are removed", () => {
@@ -11,6 +11,19 @@ describe("shared surface fit", () => {
     expect(fit.min).toBeCloseTo(-18, 1);
     expect(fit.max).toBeCloseTo(-18, 1);
     expect(fit.nFeature).toBeGreaterThan(10);
+  });
+
+  it("reads the step from a top zone to a bottom zone", () => {
+    const distance = Array.from({ length: 81 }, (_, i) => i * 0.1);
+    const height = distance.map((x) => 1 + 0.2 * x + (x >= 6 ? -25 : 0));
+    const got = fitLevels(distance, height, [0, 2], [6, 8], 1);
+    expect(got.top.mean).toBeCloseTo(0, 1);
+    expect(got.bottom.mean).toBeCloseTo(-25, 1);
+    expect(got.bottom.min).toBeCloseTo(-25, 1);
+    expect(got.bottom.max).toBeCloseTo(-25, 1);
+    expect(got.offset).toBeCloseTo(25, 1);
+    const shifted = fitLevels(distance, height, [0, 2], [2.2, 3.5], 1);
+    expect(shifted.offset).toBeCloseTo(0, 1);
   });
 
   it("reads a known scratch depth from the frame between two boxes", () => {
